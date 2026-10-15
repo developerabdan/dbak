@@ -34,6 +34,7 @@ func (d Data) files() []string {
 		filepath.Join(d.StateDir, app.StateFile),
 		filepath.Join(d.StateDir, app.LockFile))
 	for _, pattern := range []string{
+		filepath.Join(d.SecretsDir(), "*", "db_password"),
 		filepath.Join(d.StateDir, "pgpass-*"),
 		filepath.Join(d.StateDir, "my-*.cnf"),
 		filepath.Join(d.LogDir, "dbak.log*"),
@@ -56,7 +57,9 @@ func RemoveData(d Data) ([]string, error) {
 		}
 		removed = append(removed, file)
 	}
-	for _, dir := range append([]string{d.SecretsDir()}, d.Directories()...) {
+	sourceDirs, _ := filepath.Glob(filepath.Join(d.SecretsDir(), "*"))
+	dirs := append(sourceDirs, d.SecretsDir())
+	for _, dir := range append(dirs, d.Directories()...) {
 		err := os.Remove(dir)
 		if err == nil {
 			removed = append(removed, dir)

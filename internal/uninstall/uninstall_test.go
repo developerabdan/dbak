@@ -31,6 +31,8 @@ func TestRemoveData(t *testing.T) {
 	for _, f := range []string{
 		d.ConfigPath,
 		filepath.Join(d.SecretsDir(), "db_password"),
+		filepath.Join(d.SecretsDir(), "main_pg", "db_password"),
+		filepath.Join(d.SecretsDir(), "shop_mysql", "db_password"),
 		filepath.Join(d.SecretsDir(), "id_ed25519"),
 		filepath.Join(d.SecretsDir(), "id_ed25519.pub"),
 		filepath.Join(d.SecretsDir(), "known_hosts"),
@@ -49,7 +51,7 @@ func TestRemoveData(t *testing.T) {
 	if _, err := RemoveData(d); err != nil {
 		t.Fatal(err)
 	}
-	for _, gone := range []string{d.ConfigPath, d.SecretsDir(), filepath.Dir(d.ConfigPath), d.LogDir, filepath.Join(d.StateDir, "state.json")} {
+	for _, gone := range []string{d.ConfigPath, filepath.Join(d.SecretsDir(), "main_pg"), d.SecretsDir(), filepath.Dir(d.ConfigPath), d.LogDir, filepath.Join(d.StateDir, "state.json")} {
 		if exists(gone) {
 			t.Errorf("%s still exists", gone)
 		}
