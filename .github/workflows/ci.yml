@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - name: go vet
+        run: go vet ./...
+      - name: staticcheck
+        run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 ./...
+      - name: unit tests
+        run: go test ./...
+
+  integration:
+    runs-on: ubuntu-24.04
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: start the test containers
+        run: docker compose -f docker-compose.test.yml -p dbaktest up -d
+      - name: integration tests
+        env:
+          DBAK_IT_PG_BIN: /usr/lib/postgresql/16/bin
+        run: go test -tags integration -count=1 ./internal/engine/ ./internal/backup/
+      - name: end-to-end tests
+        run: |
+          ./test/e2e/init.sh
+          ./test/e2e/schedule.sh
+          ./test/e2e/install.sh
+      - name: stop the test containers
+        if: always()
+        run: docker compose -f docker-compose.test.yml -p dbaktest down -v
