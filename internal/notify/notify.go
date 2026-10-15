@@ -190,12 +190,25 @@ func (n *Notifier) postOnce(ctx context.Context, endpoint, contentType string, b
 		return true, fmt.Errorf("the request did not complete: %w", err)
 	}
 	defer resp.Body.Close()
-	io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
+	data, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return false, nil
 	}
 	retry := resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests
+	if description := errorDescription(data); description != "" {
+		return retry, fmt.Errorf("the server returned HTTP status %d: %s", resp.StatusCode, description)
+	}
 	return retry, fmt.Errorf("the server returned HTTP status %d", resp.StatusCode)
+}
+
+func errorDescription(data []byte) string {
+	var body struct {
+		Description string `json:"description"`
+	}
+	if json.Unmarshal(data, &body) != nil {
+		return ""
+	}
+	return truncate(strings.TrimSpace(body.Description), maxErrorLength)
 }
 
 func TelegramText(run state.Run) string {

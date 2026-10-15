@@ -224,3 +224,18 @@ func TestTelegramWithoutToken(t *testing.T) {
 		t.Fatal("got no error for an empty token")
 	}
 }
+
+func TestTelegramErrorDescription(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		io.WriteString(w, `{"ok":false,"error_code":400,"description":"Bad Request: chat not found"}`)
+	}))
+	defer server.Close()
+	var logs bytes.Buffer
+	n := newNotifier(config.Notify{TelegramChatID: "-1001"}, "123:SECRET", &logs)
+	n.TelegramAPI = server.URL
+	err := n.SendTelegram(context.Background(), "x")
+	if err == nil || err.Error() != "the server returned HTTP status 400: Bad Request: chat not found" {
+		t.Fatalf("got %v", err)
+	}
+}
