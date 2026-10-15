@@ -88,15 +88,15 @@ func ClientPackage(family, engine string) string {
 	return ""
 }
 
-func InstallCommand(family, pkg string) []string {
+func InstallCommands(family, pkg string) [][]string {
 	switch family {
 	case FamilyDebian:
-		return []string{"apt-get", "install", "-y", pkg}
+		return [][]string{{"apt-get", "update"}, {"apt-get", "install", "-y", pkg}}
 	case FamilyRHEL:
 		if _, err := exec.LookPath("dnf"); err == nil {
-			return []string{"dnf", "install", "-y", pkg}
+			return [][]string{{"dnf", "install", "-y", pkg}}
 		}
-		return []string{"yum", "install", "-y", pkg}
+		return [][]string{{"yum", "install", "-y", pkg}}
 	}
 	return nil
 }

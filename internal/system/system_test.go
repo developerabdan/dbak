@@ -51,11 +51,12 @@ func TestClientPackage(t *testing.T) {
 	}
 }
 
-func TestInstallCommand(t *testing.T) {
-	if got := InstallCommand(FamilyDebian, "postgresql-client"); !slices.Equal(got, []string{"apt-get", "install", "-y", "postgresql-client"}) {
+func TestInstallCommands(t *testing.T) {
+	got := InstallCommands(FamilyDebian, "postgresql-client")
+	if len(got) != 2 || !slices.Equal(got[0], []string{"apt-get", "update"}) || !slices.Equal(got[1], []string{"apt-get", "install", "-y", "postgresql-client"}) {
 		t.Fatalf("got %v", got)
 	}
-	if InstallCommand("", "x") != nil {
+	if InstallCommands("", "x") != nil {
 		t.Fatal("got a command for an unknown family")
 	}
 }
