@@ -46,6 +46,7 @@ func (s *session) summary() string {
 		"Private key:       "+c.Destination.PrivateKeyFile,
 		"Schedule:          "+describeSchedule(c.Schedule),
 		"Retention:         "+describeRetention(c.Retention),
+		"Encryption:        "+describeEncryption(c.Encryption.Recipients),
 		"Notifications:     "+c.Notify.When,
 		"Webhook:           "+maskURL(c.Notify.WebhookURL),
 		"Telegram:          "+describeTelegram(c.Notify),

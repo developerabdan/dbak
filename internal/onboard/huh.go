@@ -48,6 +48,12 @@ func NewStdUI() UI {
 	return ui
 }
 
+func ClearTerminal() {
+	if isTerminal(os.Stdout) {
+		fmt.Fprint(os.Stdout, "\033[H\033[2J\033[3J")
+	}
+}
+
 func isTerminal(f *os.File) bool {
 	info, err := f.Stat()
 	return err == nil && info.Mode()&os.ModeCharDevice != 0

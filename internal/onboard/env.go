@@ -68,6 +68,7 @@ type Env struct {
 
 	InstallSchedule  func(ctx context.Context, sc config.Schedule) (schedule.Result, error)
 	SendTelegramTest func(ctx context.Context, token, chatID string) error
+	ClearScreen      func()
 }
 
 func (e *Env) now() time.Time {

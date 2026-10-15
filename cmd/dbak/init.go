@@ -111,6 +111,7 @@ func newInitEnv(opts *globalOptions) (*onboard.Env, error) {
 			})
 		},
 		InstallSchedule: installer.Install,
+		ClearScreen:     onboard.ClearTerminal,
 		SendTelegramTest: func(ctx context.Context, token, chatID string) error {
 			n := notify.New(config.Notify{TelegramChatID: chatID}, token, slog.New(slog.DiscardHandler))
 			return n.SendTelegram(ctx, notify.TelegramTestText(hostname))

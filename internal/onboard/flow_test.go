@@ -179,6 +179,7 @@ func tailAnswers() []answer {
 		{match: "Daily backups"},
 		{match: "Weekly backups"},
 		{match: "Monthly backups"},
+		{match: "Encrypt the backups?", value: keyOff},
 		{match: "When must dbak send", value: config.NotifyFailure},
 		{match: "Webhook URL", value: "https://hooks.example.com/secret-token"},
 		{match: "Telegram?", value: true},

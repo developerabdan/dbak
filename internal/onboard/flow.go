@@ -15,6 +15,7 @@ const (
 	sectionSchedule     = "schedule"
 	sectionRetention    = "retention"
 	sectionNotification = "notify"
+	sectionEncryption   = "encryption"
 )
 
 func Run(ctx context.Context, env *Env) error {
@@ -35,6 +36,7 @@ func runFull(ctx context.Context, s *session) error {
 		func() error { return s.configureDestination(ctx) },
 		s.configureSchedule,
 		s.configureRetention,
+		s.configureEncryption,
 		func() error { return s.configureNotify(ctx) },
 		s.confirmAndSave,
 		func() error { s.installSchedule(ctx); return nil },
@@ -79,6 +81,7 @@ func editSection(ctx context.Context, s *session) error {
 		"SFTP destination", sectionDestination,
 		"Schedule", sectionSchedule,
 		"Retention", sectionRetention,
+		"Backup encryption", sectionEncryption,
 		"Notifications", sectionNotification,
 	), sectionSource)
 	if err != nil {
@@ -93,6 +96,8 @@ func editSection(ctx context.Context, s *session) error {
 		err = s.configureSchedule()
 	case sectionRetention:
 		err = s.configureRetention()
+	case sectionEncryption:
+		err = s.configureEncryption()
 	case sectionNotification:
 		err = s.configureNotify(ctx)
 	}

@@ -65,7 +65,13 @@ func (f *fakeUI) Input(title, _, value string, validate func(string) error) (str
 
 func (f *fakeUI) Secret(title, _ string, validate func(string) error) (string, error) {
 	a := f.next("secret", title)
-	value := a.value.(string)
+	var value string
+	switch v := a.value.(type) {
+	case string:
+		value = v
+	case func() string:
+		value = v()
+	}
 	f.check(title, validate, value)
 	return value, nil
 }
