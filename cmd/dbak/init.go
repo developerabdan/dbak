@@ -103,10 +103,11 @@ func newInitEnv(opts *globalOptions) (*onboard.Env, error) {
 		FetchHostKey: func(host string, port int) (ssh.PublicKey, error) {
 			return sftp.FetchHostKey(host, port, 15*time.Second)
 		},
-		RunBackup: func(ctx context.Context) (state.Run, error) {
+		RunBackup: func(ctx context.Context, source string) (state.Run, error) {
 			return backup.RunJob(ctx, backup.JobOptions{
 				ConfigPath: opts.configPath,
 				StateDir:   opts.stateDir,
+				Source:     source,
 				Logger:     progressLogger(),
 			})
 		},

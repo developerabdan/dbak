@@ -23,18 +23,19 @@ import (
 )
 
 type harness struct {
-	env          *Env
-	ui           *fakeUI
-	eng          *fakeEngine
-	server       *sftptest.Server
-	remoteRoot   string
-	backups      int
-	schedules    []config.Schedule
-	scheduleErr  error
-	telegramErrs []error
-	telegramSent []string
-	commands     [][]string
-	sources      []config.Source
+	env           *Env
+	ui            *fakeUI
+	eng           *fakeEngine
+	server        *sftptest.Server
+	remoteRoot    string
+	backups       int
+	schedules     []config.Schedule
+	scheduleErr   error
+	telegramErrs  []error
+	telegramSent  []string
+	commands      [][]string
+	sources       []config.Source
+	backupSources []string
 }
 
 func newHarness(t *testing.T) *harness {
@@ -79,8 +80,9 @@ func newHarness(t *testing.T) *harness {
 		FetchHostKey: func(host string, port int) (ssh.PublicKey, error) {
 			return sftp.FetchHostKey(host, port, 5*time.Second)
 		},
-		RunBackup: func(context.Context) (state.Run, error) {
+		RunBackup: func(_ context.Context, source string) (state.Run, error) {
 			h.backups++
+			h.backupSources = append(h.backupSources, source)
 			return state.Run{Status: state.StatusSuccess, Databases: []state.Database{
 				{Source: "postgres", Name: "app_prod", Status: state.StatusSuccess, SizeBytes: 2048, RemotePath: "/backups/vm-app-01/postgres/app_prod/app_prod_20261015T120000Z.dump"},
 			}}, nil

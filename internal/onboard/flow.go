@@ -46,7 +46,7 @@ func runFull(ctx context.Context, s *session) error {
 			return err
 		}
 	}
-	return s.offerBackup(ctx, "Run the first backup now?")
+	return s.offerBackup(ctx, "Run the first backup now?", "")
 }
 
 func runWithExisting(ctx context.Context, env *Env) error {
@@ -68,11 +68,7 @@ func runWithExisting(ctx context.Context, env *Env) error {
 	case "restart":
 		return runFull(ctx, newSession(env))
 	}
-	s := newSession(env)
-	s.cfg = *cfg
-	s.loadPasswords()
-	s.telegramToken = loadSecretIfPresent(cfg.Notify.TelegramTokenFile)
-	return editSection(ctx, s)
+	return editSection(ctx, sessionFor(env, cfg))
 }
 
 func editSection(ctx context.Context, s *session) error {
@@ -108,7 +104,7 @@ func editSection(ctx context.Context, s *session) error {
 		return err
 	}
 	s.installSchedule(ctx)
-	return s.offerBackup(ctx, "Run a backup now?")
+	return s.offerBackup(ctx, "Run a backup now?", "")
 }
 
 func IsAborted(err error) bool {

@@ -64,7 +64,7 @@ type Env struct {
 	RunCommand   func(ctx context.Context, args []string) error
 	DialSFTP     func(cfg sftp.Config) (SFTPClient, error)
 	FetchHostKey func(host string, port int) (ssh.PublicKey, error)
-	RunBackup    func(ctx context.Context) (state.Run, error)
+	RunBackup    func(ctx context.Context, source string) (state.Run, error)
 
 	InstallSchedule  func(ctx context.Context, sc config.Schedule) (schedule.Result, error)
 	SendTelegramTest func(ctx context.Context, token, chatID string) error

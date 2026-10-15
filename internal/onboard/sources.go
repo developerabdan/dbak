@@ -73,8 +73,12 @@ func (s *session) removeSource() error {
 		return err
 	}
 	i, _ := strconv.Atoi(choice)
+	return s.removeSourceAt(i)
+}
+
+func (s *session) removeSourceAt(i int) error {
 	removed := s.cfg.Sources[i]
-	ok, err := ui.Confirm(fmt.Sprintf("Remove the source %s?", removed.Name),
+	ok, err := s.env.UI.Confirm(fmt.Sprintf("Remove the source %s?", removed.Name),
 		"dbak will not make backups of its databases. The backups on the SFTP server stay.", false)
 	if err != nil {
 		return err

@@ -49,5 +49,9 @@ docker run --rm --network dbaktest_default --entrypoint sh "$image" -c '
 	grep -q "name: postgres" /etc/dbak/config.yaml
 	test "$(stat -c %U:%a /etc/dbak/config.yaml)" = dbak:600
 	gosu dbak /usr/local/bin/dbak run
+	dbak source list | grep -Eq "^postgres +postgres +postgres16:5432 +backup_ro +app_prod +global$"
+	dbak notify test 2>&1 | grep -q "No notification target is set"
+	dbak source remove postgres 2>&1 | grep -q "is the only source"
+	gosu dbak dbak source add 2>&1 | grep -q "must run as root"
 '
 echo "The end-to-end test of dbak init passed."

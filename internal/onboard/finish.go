@@ -179,7 +179,7 @@ func (s *session) installSchedule(ctx context.Context) {
 	ui.Success(res.Summary())
 }
 
-func (s *session) offerBackup(ctx context.Context, title string) error {
+func (s *session) offerBackup(ctx context.Context, title, source string) error {
 	ui := s.env.UI
 	run, err := ui.Confirm(title, "", true)
 	if err != nil || !run {
@@ -189,7 +189,7 @@ func (s *session) offerBackup(ctx context.Context, title string) error {
 		return err
 	}
 	ui.Heading("Backup")
-	record, runErr := s.env.RunBackup(ctx)
+	record, runErr := s.env.RunBackup(ctx, source)
 	if err := s.fixStateOwner(); err != nil {
 		ui.Warn(app.Sentence(err.Error()))
 	}
