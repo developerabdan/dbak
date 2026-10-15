@@ -141,6 +141,12 @@ codes are the same as for `dbak run`.
 | `dbak status [--json]` | Shows the last run of each database and the next scheduled run. |
 | `dbak list [--source NAME] [--db NAME]` | Shows the backups on the SFTP server. |
 | `dbak doctor` | Examines the config, the permissions, the tools, the connections, and the schedule. It examines each source. |
+| `dbak source list` | Shows the database sources. |
+| `dbak source add` | Adds a database source with questions, examines it, and can make a backup of it. |
+| `dbak source edit NAME` | Changes a database source with questions. |
+| `dbak source remove NAME` | Removes a database source and its password file. The backups on the SFTP server stay. |
+| `dbak notify` | Changes the webhook, Telegram, and healthcheck settings with questions. |
+| `dbak notify test` | Sends a test message to the webhook and to Telegram. |
 | `dbak user-helper` | Shows the SQL that makes a read-only backup user. |
 | `dbak schedule [--show]` | Installs the schedule from the config again, or shows it. |
 | `dbak uninstall` | Removes the schedule and the binary. The backups on the SFTP server stay. |
@@ -150,6 +156,9 @@ Run `dbak help COMMAND` for the flags of a command.
 
 If two sources have a database with the same name, `--db` must have
 `--source`.
+
+Run `init`, `source add`, `source edit`, `source remove`, and `notify` with
+`sudo`. These commands write the config and the secret files.
 
 ## Configuration
 
@@ -229,8 +238,9 @@ The config does not contain secrets. Each secret is in a separate file that the
 config names.
 
 If you change the config manually, run `sudo dbak schedule`. To change the
-config with questions, run `sudo dbak init` again and select one section. In
-the section "Database sources", you can add, change, or remove a source.
+config with questions, run `sudo dbak init` again and select one section. To
+change only the sources or the notifications, use `sudo dbak source` or
+`sudo dbak notify`.
 
 ### Upgrade from version 1
 
@@ -337,7 +347,8 @@ The webhook gets a POST request with this JSON body:
 }
 ```
 
-The `status` is `success`, `partial`, or `failure`.
+The `status` is `success`, `partial`, or `failure`. `dbak notify test` sends
+the status `test` with an empty `databases` list.
 
 Telegram gets a short text with the host, the status, and the databases, for
 example `main_pg/app_prod: success, 100.0 MiB`. For
