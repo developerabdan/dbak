@@ -11,6 +11,9 @@ the backups to an SFTP server.
   Then `dbak init` asks some questions, and the first backup starts.
 - **PostgreSQL, MySQL, and MariaDB.** dbak finds the server type and version.
   It uses the correct dump options for each server.
+- **More than one database server.** One install can make backups from many
+  database sources. For example, a PostgreSQL server and a MySQL server on the
+  same virtual machine. One run sends one notification.
 - **Read-only backup user.** `dbak user-helper` shows the SQL that makes a user
   with only the privileges that a backup needs.
 - **Dump check before the first backup.** dbak finds the tables that the backup
@@ -77,15 +80,18 @@ sudo dbak init
 ## Quick start
 
 1. Install dbak. The installer starts `dbak init`.
-2. Select the database engine and type the connection settings.
+2. Select the database engine, give the source a name, and type the
+   connection settings.
 3. If you do not have a backup user, select the SQL helper. Run the SQL on the
    database server.
-4. Type the SFTP server and the remote path.
-5. Add the public key that dbak shows to `~/.ssh/authorized_keys` on the SFTP
+4. To add a different database server, answer Yes to "Add another database
+   source?".
+5. Type the SFTP server and the remote path.
+6. Add the public key that dbak shows to `~/.ssh/authorized_keys` on the SFTP
    server.
-6. Make sure that the host key fingerprint is correct.
-7. Select the schedule, the retention, and the notifications.
-8. Let dbak run the first backup.
+7. Make sure that the host key fingerprint is correct.
+8. Select the schedule, the retention, and the notifications.
+9. Let dbak run the first backup.
 
 To see the result, run `dbak status`.
 
@@ -94,15 +100,18 @@ To see the result, run `dbak status`.
 For automation, give dbak init a config file. dbak does not ask questions:
 
 ```sh
-sudo DBAK_DB_PASSWORD='the password' dbak init --config /root/dbak.yaml
+sudo DBAK_DB_PASSWORD_MAIN_PG='the password' \
+  DBAK_DB_PASSWORD_SHOP_MYSQL='the other password' \
+  dbak init --config /root/dbak.yaml
 ```
 
 dbak reads the file and examines the database, the dump check, and the SFTP
 upload. Only after all checks pass, it writes `/etc/dbak/config.yaml` and the
 secrets, and installs the schedule. If a check fails, dbak changes nothing.
 
-- The database password comes from `DBAK_DB_PASSWORD` or from
-  `source.password_file`.
+- The password of each source comes from `DBAK_DB_PASSWORD_<NAME>` or from
+  the `password_file` of the source. `<NAME>` is the source name in capital
+  letters. If the config has one source, `DBAK_DB_PASSWORD` is also correct.
 - The Telegram bot token comes from `DBAK_TELEGRAM_TOKEN` or from
   `notify.telegram_token_file`.
 - `destination.private_key_file` must be a key file that exists, without a
@@ -118,10 +127,10 @@ codes are the same as for `dbak run`.
 | Command | What it does |
 |---|---|
 | `dbak init [--config FILE]` | Asks the questions, saves the config, and installs the schedule. With `--config`, it uses the file and does not ask questions. |
-| `dbak run [--db NAME]` | Makes a backup now. The schedule uses this command. |
+| `dbak run [--source NAME] [--db NAME]` | Makes a backup now. The schedule uses this command. |
 | `dbak status [--json]` | Shows the last run of each database and the next scheduled run. |
-| `dbak list [--db NAME]` | Shows the backups on the SFTP server. |
-| `dbak doctor` | Examines the config, the permissions, the tools, the connections, and the schedule. |
+| `dbak list [--source NAME] [--db NAME]` | Shows the backups on the SFTP server. |
+| `dbak doctor` | Examines the config, the permissions, the tools, the connections, and the schedule. It examines each source. |
 | `dbak user-helper` | Shows the SQL that makes a read-only backup user. |
 | `dbak schedule [--show]` | Installs the schedule from the config again, or shows it. |
 | `dbak uninstall` | Removes the schedule and the binary. The backups on the SFTP server stay. |
@@ -129,22 +138,40 @@ codes are the same as for `dbak run`.
 
 Run `dbak help COMMAND` for the flags of a command.
 
+If two sources have a database with the same name, `--db` must have
+`--source`.
+
 ## Configuration
 
 `dbak init` writes `/etc/dbak/config.yaml`:
 
 ```yaml
-version: 1
-source:
-  engine: postgres
-  host: 10.0.0.10
-  port: 5432
-  username: backup_ro
-  password_file: /etc/dbak/secrets/db_password
-  ssl_mode: prefer
-  databases:
-    - app_prod
-    - app_audit
+version: 2
+sources:
+  - name: main_pg
+    engine: postgres
+    host: 10.0.0.10
+    port: 5432
+    username: backup_ro
+    password_file: /etc/dbak/secrets/main_pg/db_password
+    ssl_mode: prefer
+    bin_dir: /usr/lib/postgresql/16/bin
+    databases:
+      - app_prod
+      - app_audit
+  - name: shop_mysql
+    engine: mysql
+    host: 127.0.0.1
+    port: 3306
+    username: backup_ro
+    password_file: /etc/dbak/secrets/shop_mysql/db_password
+    ssl_mode: preferred
+    databases:
+      - shop
+    retention:
+      daily: 14
+      weekly: 0
+      monthly: 0
 destination:
   type: sftp
   host: backup.example.com
@@ -174,7 +201,10 @@ notify:
 
 | Field | Values |
 |---|---|
-| `source.engine` | `postgres` or `mysql`. Use `mysql` also for MariaDB. |
+| `sources[].name` | Letters, digits, and underscores. Each source has a different name. dbak uses the name in the remote directory. |
+| `sources[].engine` | `postgres` or `mysql`. Use `mysql` also for MariaDB. |
+| `sources[].bin_dir` | Optional. The directory of `pg_dump` or `mysqldump` for this source. If it is empty, dbak uses `PATH`. |
+| `sources[].retention` | Optional. The retention for this source. If it is empty, the source uses the global `retention`. |
 | `schedule.frequency` | `daily`, `every_n_hours`, or `weekly`. |
 | `schedule.every_hours` | 1, 2, 3, 4, 6, 8, or 12. Only for `every_n_hours`. |
 | `schedule.weekday` | `Sun` to `Sat`. Only for `weekly`. |
@@ -185,11 +215,24 @@ The config does not contain secrets. Each secret is in a separate file that the
 config names.
 
 If you change the config manually, run `sudo dbak schedule`. To change the
-config with questions, run `sudo dbak init` again and select one section.
+config with questions, run `sudo dbak init` again and select one section. In
+the section "Database sources", you can add, change, or remove a source.
+
+### Upgrade from version 1
+
+dbak 0.2 reads a version 1 config with one `source` block. It uses the block as
+one source with the name `default`. The next `sudo dbak init` writes the config
+in version 2.
+
+The new backups go to `<remote_path>/<hostname>/default/<database>/`. The old
+backups stay in `<remote_path>/<hostname>/<database>/`. `dbak list` and the
+retention do not see the old backups. When you do not need them, remove them
+manually on the SFTP server.
 
 ## Retention
 
-dbak runs the retention after each good backup of a database.
+dbak runs the retention after each good backup of a database. Each source uses
+its own `retention`, or the global `retention` if it has none.
 
 - **Daily** keeps the newest backup of each of the last N days that have a
   backup.
@@ -217,15 +260,16 @@ The webhook gets a POST request with this JSON body:
   "started_at": "2026-10-15T19:00:00Z",
   "finished_at": "2026-10-15T19:02:13Z",
   "databases": [
-    {"name": "app_prod", "status": "success", "size_bytes": 104857600, "remote_path": "/backups/vm-app-01/app_prod/app_prod_20261015T190000Z.dump"},
-    {"name": "app_audit", "status": "failure", "error": "pg_dump: permission denied for table audit_log"}
+    {"source": "main_pg", "name": "app_prod", "status": "success", "size_bytes": 104857600, "remote_path": "/backups/vm-app-01/main_pg/app_prod/app_prod_20261015T190000Z.dump"},
+    {"source": "main_pg", "name": "app_audit", "status": "failure", "error": "pg_dump: permission denied for table audit_log"}
   ]
 }
 ```
 
 The `status` is `success`, `partial`, or `failure`.
 
-Telegram gets a short text with the host, the status, and the databases. For
+Telegram gets a short text with the host, the status, and the databases, for
+example `main_pg/app_prod: success, 100.0 MiB`. For
 the healthcheck, dbak sends a request to `<URL>/start` when a run starts. After
 a good run, it sends a request to `<URL>`. After a failure, it sends a request to
 `<URL>/fail`.
@@ -236,7 +280,7 @@ does not change the exit code.
 ## Backup files
 
 ```
-<remote_path>/<hostname>/<database>/<database>_<YYYYMMDD>T<HHMMSS>Z.<ext>
+<remote_path>/<hostname>/<source>/<database>/<database>_<YYYYMMDD>T<HHMMSS>Z.<ext>
 ```
 
 The time is in UTC, so the alphabetical order is also the time order.
@@ -252,7 +296,8 @@ The time is in UTC, so the alphabetical order is also the time order.
 |---|---|---|
 | `/usr/local/bin/dbak` | The binary | root, 0755 |
 | `/etc/dbak/config.yaml` | The config | dbak, 0600 |
-| `/etc/dbak/secrets/` | The password, the SSH key, the host key, and the Telegram token | dbak, 0700 for the directory and 0600 for the files |
+| `/etc/dbak/secrets/` | The SSH key, the host key, and the Telegram token | dbak, 0700 for the directory and 0600 for the files |
+| `/etc/dbak/secrets/<source>/db_password` | The database password of one source | dbak, 0700 for the directory and 0600 for the file |
 | `/var/lib/dbak/state.json` | The history of the last 50 runs | dbak, 0600 |
 | `/var/log/dbak/dbak.log` | The log, only with cron | dbak, 0640 |
 
@@ -265,10 +310,10 @@ With systemd, the log is in the journal. To see it, run `journalctl -u dbak.serv
 | 0 | All backups are good. |
 | 1 | A general error occurred. |
 | 2 | The config is not valid. |
-| 3 | dbak cannot connect to the database server. |
+| 3 | dbak cannot connect to a database server. All sources failed. |
 | 4 | The dump of all databases failed. |
 | 5 | The upload to the SFTP server failed. |
-| 6 | The backup of some databases failed. |
+| 6 | The backup of some databases failed. For example, one source is not available. |
 | 7 | A different `dbak run` is in progress. |
 
 ## Build and test
