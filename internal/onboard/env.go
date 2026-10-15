@@ -32,6 +32,10 @@ func (p Paths) Secret(name string) string {
 	return filepath.Join(p.SecretsDir(), name)
 }
 
+func (p Paths) SourcePasswordFile(source string) string {
+	return filepath.Join(p.SecretsDir(), source, passwordFileName)
+}
+
 const (
 	passwordFileName   = "db_password"
 	privateKeyFileName = "id_ed25519"
@@ -76,24 +80,39 @@ func (e *Env) now() time.Time {
 type session struct {
 	env           *Env
 	cfg           config.Config
-	password      string
+	passwords     map[string]string
+	removed       []string
+	current       int
 	telegramToken string
 	server        engine.ServerInfo
 	eng           engine.Full
 }
 
 func newSession(env *Env) *session {
-	return &session{env: env, cfg: defaultConfig(env)}
+	return &session{env: env, cfg: defaultConfig(env), passwords: map[string]string{}}
+}
+
+func (s *session) src() *config.Source {
+	return &s.cfg.Sources[s.current]
+}
+
+func (s *session) password() string {
+	return s.passwords[s.src().Name]
+}
+
+func (s *session) setPassword(password string) {
+	s.passwords[s.src().Name] = password
+}
+
+func (s *session) loadPasswords() {
+	for _, source := range s.cfg.Sources {
+		s.passwords[source.Name] = loadSecretIfPresent(source.PasswordFile)
+	}
 }
 
 func defaultConfig(env *Env) config.Config {
 	return config.Config{
 		Version: config.CurrentVersion,
-		Source: config.Source{
-			Host:         "127.0.0.1",
-			Username:     "backup_ro",
-			PasswordFile: env.Paths.Secret(passwordFileName),
-		},
 		Destination: config.Destination{
 			Type:           "sftp",
 			Port:           22,

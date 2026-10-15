@@ -11,6 +11,7 @@ import (
 )
 
 type Entry struct {
+	Source    string    `json:"source"`
 	Database  string    `json:"database"`
 	Name      string    `json:"name"`
 	Path      string    `json:"path"`
@@ -22,8 +23,8 @@ type Lister interface {
 	ReadDir(dir string) ([]os.FileInfo, error)
 }
 
-func ListBackups(store Lister, remotePath, hostname, database string) ([]Entry, error) {
-	dir := RemoteDir(remotePath, hostname, database)
+func ListBackups(store Lister, remotePath, hostname, source, database string) ([]Entry, error) {
+	dir := RemoteDir(remotePath, hostname, source, database)
 	infos, err := store.ReadDir(dir)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
@@ -41,6 +42,7 @@ func ListBackups(store Lister, remotePath, hostname, database string) ([]Entry, 
 			continue
 		}
 		entries = append(entries, Entry{
+			Source:    source,
 			Database:  database,
 			Name:      f.Name,
 			Path:      path.Join(dir, f.Name),

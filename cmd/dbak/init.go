@@ -33,7 +33,8 @@ func newInitCommand(opts *globalOptions) *cobra.Command {
 		Short: "Configure dbak with interactive questions.",
 		Long: "Configure the database source, the SFTP destination, the schedule, the retention, and the notifications. You must run this command as root.\n\n" +
 			"With --config, dbak init does not ask questions. It reads the file, examines the database and the SFTP server, saves the config in " + app.ConfigPath + ", and installs the schedule. " +
-			"Give the database password in DBAK_DB_PASSWORD and the Telegram bot token in DBAK_TELEGRAM_TOKEN, or put them in the files that the config names.",
+			"Give the password of each source in DBAK_DB_PASSWORD_<NAME>, with the source name in capital letters. If the config has one source, DBAK_DB_PASSWORD is also correct. " +
+			"Give the Telegram bot token in DBAK_TELEGRAM_TOKEN. You can also put the secrets in the files that the config names.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
@@ -41,9 +42,7 @@ func newInitCommand(opts *globalOptions) *cobra.Command {
 			if !system.IsRoot() {
 				return app.Exit(app.ExitGeneral, errors.New("dbak init must run as root. Run: sudo dbak init"))
 			}
-			secrets := onboard.Secrets{DBPassword: os.Getenv("DBAK_DB_PASSWORD"), TelegramToken: os.Getenv("DBAK_TELEGRAM_TOKEN")}
-			os.Unsetenv("DBAK_DB_PASSWORD")
-			os.Unsetenv("DBAK_TELEGRAM_TOKEN")
+			secrets := secretsFromEnvironment()
 			env, err := newInitEnv(opts)
 			if err != nil {
 				return app.Exit(app.ExitGeneral, err)
@@ -117,6 +116,25 @@ func newInitEnv(opts *globalOptions) (*onboard.Env, error) {
 			return n.SendTelegram(ctx, notify.TelegramTestText(hostname))
 		},
 	}, nil
+}
+
+func secretsFromEnvironment() onboard.Secrets {
+	secrets := onboard.Secrets{
+		DBPassword:    os.Getenv("DBAK_DB_PASSWORD"),
+		DBPasswords:   map[string]string{},
+		TelegramToken: os.Getenv("DBAK_TELEGRAM_TOKEN"),
+	}
+	os.Unsetenv("DBAK_DB_PASSWORD")
+	os.Unsetenv("DBAK_TELEGRAM_TOKEN")
+	prefix := onboard.PasswordVariable("")
+	for _, entry := range os.Environ() {
+		name, value, _ := strings.Cut(entry, "=")
+		if source, ok := strings.CutPrefix(name, prefix); ok && source != "" {
+			secrets.DBPasswords[source] = value
+			os.Unsetenv(name)
+		}
+	}
+	return secrets
 }
 
 func runVisible(ctx context.Context, args []string) error {

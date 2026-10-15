@@ -64,8 +64,8 @@ func listNames(t *testing.T, dir string) []string {
 
 func TestRetentionApply(t *testing.T) {
 	root := t.TempDir()
-	prodDir := filepath.Join(root, "vm-app-01", "app_prod")
-	auditDir := filepath.Join(root, "vm-app-01", "app_audit")
+	prodDir := filepath.Join(root, "vm-app-01", "main_pg", "app_prod")
+	auditDir := filepath.Join(root, "vm-app-01", "main_pg", "app_audit")
 	for _, dir := range []string{prodDir, auditDir} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
@@ -92,7 +92,7 @@ func TestRetentionApply(t *testing.T) {
 		Retention:   config.Retention{Daily: 2},
 	}
 	var logs bytes.Buffer
-	r, err := NewRetention(cfg, localStore{}, "vm-app-01", slog.New(slog.NewTextHandler(&logs, nil)))
+	r, err := NewRetention(cfg, config.Source{Name: "main_pg"}, localStore{}, "vm-app-01", slog.New(slog.NewTextHandler(&logs, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,12 +128,40 @@ func TestRetentionApplyMissingDirectory(t *testing.T) {
 		Retention:   config.Retention{Daily: 2},
 	}
 	var logs bytes.Buffer
-	r, err := NewRetention(cfg, localStore{}, "vm-app-01", slog.New(slog.NewTextHandler(&logs, nil)))
+	r, err := NewRetention(cfg, config.Source{Name: "main_pg"}, localStore{}, "vm-app-01", slog.New(slog.NewTextHandler(&logs, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	r.Apply([]Result{{Database: state.Database{Name: "app_prod", Status: state.StatusSuccess}}})
 	if !strings.Contains(logs.String(), "Retention of app_prod stopped. The backup result does not change.") {
 		t.Fatalf("got logs:\n%s", logs.String())
+	}
+}
+
+func TestRetentionUsesTheRulesOfTheSource(t *testing.T) {
+	cfg := &config.Config{
+		Destination: config.Destination{RemotePath: "/backups"},
+		Schedule:    config.Schedule{Frequency: config.FrequencyDaily, Timezone: "UTC"},
+		Retention:   config.Retention{Daily: 7, Weekly: 4, Monthly: 6},
+	}
+	cases := []struct {
+		name   string
+		source config.Source
+		want   config.Retention
+	}{
+		{"global retention", config.Source{Name: "main_pg"}, cfg.Retention},
+		{"retention of the source", config.Source{Name: "shop_mysql", Retention: &config.Retention{Daily: 14}}, config.Retention{Daily: 14}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r, err := NewRetention(cfg, c.source, localStore{}, "vm-app-01", discardLogger())
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := config.Retention{Daily: r.Rules.Daily, Weekly: r.Rules.Weekly, Monthly: r.Rules.Monthly}
+			if got != c.want || r.Source != c.source.Name {
+				t.Fatalf("got %+v for %s, want %+v for %s", got, r.Source, c.want, c.source.Name)
+			}
+		})
 	}
 }

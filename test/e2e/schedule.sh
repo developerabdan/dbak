@@ -135,7 +135,7 @@ docker exec "$systemd_container" journalctl -u dbak.service --no-pager | grep -q
 	docker exec "$systemd_container" journalctl -u dbak.service --no-pager
 	fail "the journal does not show a good run"
 }
-docker exec dbaktest-sftp-1 sh -c 'ls /home/dbak/upload/vm-e2e-systemd/app_prod/' | grep -q '\.dump$' || fail "no backup on the SFTP server"
+docker exec dbaktest-sftp-1 sh -c 'ls /home/dbak/upload/vm-e2e-systemd/default/app_prod/' | grep -q '\.dump$' || fail "no backup on the SFTP server"
 
 docker exec "$systemd_container" sh -c 'sed -i "s/frequency: daily/frequency: every_n_hours/; s/time: \"02:00\"/every_hours: 6/" /etc/dbak/config.yaml'
 docker exec "$systemd_container" dbak schedule
@@ -144,12 +144,12 @@ docker exec "$systemd_container" grep -qx "OnCalendar=\*-\*-\* 00/6:00:00 Asia/J
 echo "== status, list, doctor, uninstall =="
 out="$(docker exec "$systemd_container" dbak status)"
 echo "$out"
-grep -Eq "^app_prod +success " <<<"$out" || fail "status table"
+grep -Eq "^default +app_prod +success " <<<"$out" || fail "status table"
 grep -q "Next backup:  .* (systemd)" <<<"$out" || fail "status next backup"
 docker exec "$systemd_container" dbak status --json | grep -q '"scheduler": "systemd"' || fail "status JSON"
 out="$(docker exec "$systemd_container" dbak list)"
 echo "$out"
-grep -Eq "^app_prod +.*/upload/vm-e2e-systemd/app_prod/app_prod_[0-9]{8}T[0-9]{6}Z\.dump$" <<<"$out" || fail "list output"
+grep -Eq "^default +app_prod +.*/upload/vm-e2e-systemd/default/app_prod/app_prod_[0-9]{8}T[0-9]{6}Z\.dump$" <<<"$out" || fail "list output"
 out="$(docker exec "$systemd_container" dbak doctor)" || {
 	echo "$out"
 	fail "dbak doctor found a failure"
@@ -168,7 +168,7 @@ for gone in /etc/systemd/system/dbak.timer /etc/systemd/system/dbak.service /usr
 	docker exec "$systemd_container" test ! -e "$gone" || fail "$gone still exists after uninstall"
 done
 docker exec "$systemd_container" systemctl list-timers --all --no-pager | grep -q dbak && fail "the timer is still loaded"
-docker exec dbaktest-sftp-1 sh -c 'ls /home/dbak/upload/vm-e2e-systemd/app_prod/' | grep -q '\.dump$' || fail "uninstall removed the remote backups"
+docker exec dbaktest-sftp-1 sh -c 'ls /home/dbak/upload/vm-e2e-systemd/default/app_prod/' | grep -q '\.dump$' || fail "uninstall removed the remote backups"
 
 echo "== cron without CRON_TZ =="
 docker run -d --name "$cron_container" --hostname vm-e2e-cron --network dbaktest_default --entrypoint sleep "$image" infinity >/dev/null

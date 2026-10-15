@@ -31,7 +31,7 @@ func Run(ctx context.Context, env *Env) error {
 
 func runFull(ctx context.Context, s *session) error {
 	steps := []func() error{
-		func() error { return s.configureSource(ctx) },
+		func() error { return s.configureSources(ctx) },
 		func() error { return s.configureDestination(ctx) },
 		s.configureSchedule,
 		s.configureRetention,
@@ -68,14 +68,14 @@ func runWithExisting(ctx context.Context, env *Env) error {
 	}
 	s := newSession(env)
 	s.cfg = *cfg
-	s.password = loadSecretIfPresent(cfg.Source.PasswordFile)
+	s.loadPasswords()
 	s.telegramToken = loadSecretIfPresent(cfg.Notify.TelegramTokenFile)
 	return editSection(ctx, s)
 }
 
 func editSection(ctx context.Context, s *session) error {
 	section, err := s.env.UI.Select("Select the section to change.", "", options(
-		"Database source", sectionSource,
+		"Database sources", sectionSource,
 		"SFTP destination", sectionDestination,
 		"Schedule", sectionSchedule,
 		"Retention", sectionRetention,
@@ -86,7 +86,7 @@ func editSection(ctx context.Context, s *session) error {
 	}
 	switch section {
 	case sectionSource:
-		err = s.configureSource(ctx)
+		err = s.manageSources(ctx)
 	case sectionDestination:
 		err = s.configureDestination(ctx)
 	case sectionSchedule:

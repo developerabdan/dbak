@@ -54,10 +54,10 @@ func (c *Config) Validate() error {
 	if c.Version != CurrentVersion {
 		v.add("version", "The version %d is not known. Use version %d.", c.Version, CurrentVersion)
 	}
-	v.source(c.Source)
+	v.sources(c.Sources)
 	v.destination(c.Destination)
 	v.schedule(c.Schedule)
-	v.retention(c.Retention)
+	v.retention("retention", c.Retention)
 	v.notify(c.Notify)
 	if len(v.problems) == 0 {
 		return nil
@@ -65,29 +65,53 @@ func (c *Config) Validate() error {
 	return &ValidationError{Problems: v.problems}
 }
 
-func (v *validator) source(s Source) {
+func (v *validator) sources(sources []Source) {
+	if len(sources) == 0 {
+		v.add("sources", "The list is empty. Add one or more database sources.")
+	}
+	seen := map[string]bool{}
+	for i, s := range sources {
+		prefix := fmt.Sprintf("sources[%d]", i)
+		if seen[s.Name] {
+			v.add(prefix+".name", "Two sources have the name %q. Give each source a different name.", s.Name)
+		}
+		seen[s.Name] = true
+		v.source(prefix, s)
+	}
+}
+
+func (v *validator) source(prefix string, s Source) {
+	if !ValidName(s.Name) {
+		v.add(prefix+".name", "The name %q is not valid. Use only letters, digits, and underscores.", s.Name)
+	}
 	switch s.Engine {
 	case EnginePostgres:
 		if !slices.Contains(postgresSSLModes, s.SSLMode) {
-			v.add("source.ssl_mode", "The value %q is not known. Use one of: %s.", s.SSLMode, strings.Join(postgresSSLModes, ", "))
+			v.add(prefix+".ssl_mode", "The value %q is not known. Use one of: %s.", s.SSLMode, strings.Join(postgresSSLModes, ", "))
 		}
 	case EngineMySQL:
 		if !slices.Contains(mysqlSSLModes, strings.ToLower(s.SSLMode)) {
-			v.add("source.ssl_mode", "The value %q is not known. Use one of: %s.", s.SSLMode, strings.Join(mysqlSSLModes, ", "))
+			v.add(prefix+".ssl_mode", "The value %q is not known. Use one of: %s.", s.SSLMode, strings.Join(mysqlSSLModes, ", "))
 		}
 	default:
-		v.add("source.engine", "The engine %q is not known. Use postgres or mysql.", s.Engine)
+		v.add(prefix+".engine", "The engine %q is not known. Use postgres or mysql.", s.Engine)
 	}
-	v.required("source.host", s.Host)
-	v.port("source.port", s.Port)
-	v.required("source.username", s.Username)
-	v.absolutePath("source.password_file", s.PasswordFile)
+	v.required(prefix+".host", s.Host)
+	v.port(prefix+".port", s.Port)
+	v.required(prefix+".username", s.Username)
+	v.absolutePath(prefix+".password_file", s.PasswordFile)
+	if s.BinDir != "" {
+		v.absolutePath(prefix+".bin_dir", s.BinDir)
+	}
+	if s.Retention != nil {
+		v.retention(prefix+".retention", *s.Retention)
+	}
 	if len(s.Databases) == 0 {
-		v.add("source.databases", "The list is empty. Add one or more database names.")
+		v.add(prefix+".databases", "The list is empty. Add one or more database names.")
 	}
 	seen := map[string]bool{}
 	for i, db := range s.Databases {
-		field := fmt.Sprintf("source.databases[%d]", i)
+		field := fmt.Sprintf("%s.databases[%d]", prefix, i)
 		if !ValidName(db) {
 			v.add(field, "The name %q is not valid. Use only letters, digits, and underscores.", db)
 		}
@@ -160,18 +184,18 @@ func ParseClock(value string) (hour, minute int, err error) {
 	return t.Hour(), t.Minute(), nil
 }
 
-func (v *validator) retention(r Retention) {
+func (v *validator) retention(field string, r Retention) {
 	if r.Daily < 0 {
-		v.add("retention.daily", "The value %d is less than zero. Use zero or more.", r.Daily)
+		v.add(field+".daily", "The value %d is less than zero. Use zero or more.", r.Daily)
 	}
 	if r.Weekly < 0 {
-		v.add("retention.weekly", "The value %d is less than zero. Use zero or more.", r.Weekly)
+		v.add(field+".weekly", "The value %d is less than zero. Use zero or more.", r.Weekly)
 	}
 	if r.Monthly < 0 {
-		v.add("retention.monthly", "The value %d is less than zero. Use zero or more.", r.Monthly)
+		v.add(field+".monthly", "The value %d is less than zero. Use zero or more.", r.Monthly)
 	}
 	if r.Daily+r.Weekly+r.Monthly <= 0 {
-		v.add("retention", "The total of daily, weekly, and monthly is zero. Keep one or more backups.")
+		v.add(field, "The total of daily, weekly, and monthly is zero. Keep one or more backups.")
 	}
 }
 

@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/developerabdan/dbak/internal/app"
+	"github.com/developerabdan/dbak/internal/config"
 	"github.com/developerabdan/dbak/internal/lock"
 	"github.com/developerabdan/dbak/internal/notify"
 	"github.com/developerabdan/dbak/internal/state"
@@ -27,18 +28,47 @@ func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-func TestSelectDatabases(t *testing.T) {
-	configured := []string{"app_prod", "app_audit"}
-	all, err := SelectDatabases(configured, "")
-	if err != nil || len(all) != 2 {
-		t.Fatalf("got %v %v", all, err)
+func TestSelectTargets(t *testing.T) {
+	cfg := &config.Config{Sources: []config.Source{
+		{Name: "main_pg", Databases: []string{"app_prod", "app_audit", "shared"}},
+		{Name: "shop_mysql", Databases: []string{"shop", "shared"}},
+	}}
+	cases := []struct {
+		name     string
+		source   string
+		database string
+		want     []string
+		err      string
+	}{
+		{"all sources", "", "", []string{"main_pg:app_prod,app_audit,shared", "shop_mysql:shop,shared"}, ""},
+		{"one source", "shop_mysql", "", []string{"shop_mysql:shop,shared"}, ""},
+		{"one database", "", "app_audit", []string{"main_pg:app_audit"}, ""},
+		{"one database of one source", "shop_mysql", "shared", []string{"shop_mysql:shared"}, ""},
+		{"unknown source", "other", "", nil, "use one of these sources: main_pg, shop_mysql"},
+		{"unknown database", "", "other", nil, "the database other is not in the config"},
+		{"database not in the source", "shop_mysql", "app_prod", nil, "not in the source shop_mysql"},
+		{"database in two sources", "", "shared", nil, "in more than one source: main_pg, shop_mysql. Add --source"},
 	}
-	one, err := SelectDatabases(configured, "app_audit")
-	if err != nil || len(one) != 1 || one[0] != "app_audit" {
-		t.Fatalf("got %v %v", one, err)
-	}
-	if _, err := SelectDatabases(configured, "other"); err == nil {
-		t.Fatal("got no error for a database that is not in the config")
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			targets, err := SelectTargets(cfg, c.source, c.database)
+			if c.err != "" {
+				if err == nil || !strings.Contains(strings.ToLower(err.Error()), strings.ToLower(c.err)) {
+					t.Fatalf("got %v, want an error with %q", err, c.err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got []string
+			for _, target := range targets {
+				got = append(got, target.Source.Name+":"+strings.Join(target.Databases, ","))
+			}
+			if !slices.Equal(got, c.want) {
+				t.Fatalf("got %v, want %v", got, c.want)
+			}
+		})
 	}
 }
 
@@ -118,8 +148,12 @@ func TestEarlyFailureSendsNotifications(t *testing.T) {
 	}
 	cfg := strings.NewReplacer(
 		"host: 10.0.0.10", "host: 127.0.0.1",
+		"host: 10.0.0.11", "host: 127.0.0.1",
 		"port: 5432", "port: "+strconv.Itoa(closedPort),
-		"/etc/dbak/secrets/db_password", passwordFile,
+		"port: 3306", "port: "+strconv.Itoa(closedPort),
+		"bin_dir: /usr/lib/postgresql/16/bin", "bin_dir: /nonexistent",
+		"/etc/dbak/secrets/main_pg/db_password", passwordFile,
+		"/etc/dbak/secrets/shop_mysql/db_password", passwordFile,
 		`webhook_url: ""`, `webhook_url: "`+server.URL+`/hook"`,
 		`healthcheck_url: ""`, `healthcheck_url: "`+server.URL+`/ping"`,
 	).Replace(readValidConfig(t))
@@ -131,15 +165,18 @@ func TestEarlyFailureSendsNotifications(t *testing.T) {
 	if app.ExitCode(err) != app.ExitDatabase {
 		t.Fatalf("got exit code %d, want %d: %v", app.ExitCode(err), app.ExitDatabase, err)
 	}
-	if record.Status != state.StatusFailure || len(record.Databases) != 2 {
+	if record.Status != state.StatusFailure || len(record.Databases) != 3 {
 		t.Fatalf("got record %+v", record)
+	}
+	if record.Databases[0].Source != "main_pg" || record.Databases[2].Source != "shop_mysql" {
+		t.Fatalf("the record does not show the sources: %+v", record.Databases)
 	}
 	mu.Lock()
 	defer mu.Unlock()
 	if !slices.Equal(paths, []string{"/ping/start", "/ping/fail", "/hook"}) {
 		t.Fatalf("got requests %v", paths)
 	}
-	if payload.Status != state.StatusFailure || len(payload.Databases) != 2 || payload.Databases[0].Error == "" {
+	if payload.Status != state.StatusFailure || len(payload.Databases) != 3 || payload.Databases[0].Error == "" {
 		t.Fatalf("got payload %+v", payload)
 	}
 	saved, err := state.Load(filepath.Join(dir, app.StateFile))

@@ -18,9 +18,18 @@ import (
 )
 
 const (
-	FailureDump   = "dump"
-	FailureUpload = "upload"
+	FailureConfig  = "config"
+	FailureConnect = "connect"
+	FailureDump    = "dump"
+	FailureUpload  = "upload"
 )
+
+var failureExitCodes = map[string]int{
+	FailureConfig:  app.ExitConfigInvalid,
+	FailureConnect: app.ExitDatabase,
+	FailureDump:    app.ExitDumpFailed,
+	FailureUpload:  app.ExitUploadFailed,
+}
 
 const uploadBufferSize = 1 << 20
 
@@ -41,6 +50,7 @@ type Runner struct {
 	Store      Store
 	RemotePath string
 	Hostname   string
+	Source     string
 	Logger     *slog.Logger
 	Now        func() time.Time
 }
@@ -55,7 +65,7 @@ func (r *Runner) Run(ctx context.Context, databases []string) []Result {
 
 func (r *Runner) runOne(ctx context.Context, database string) Result {
 	started := r.now()
-	final := RemoteFile(r.RemotePath, r.Hostname, database, started, r.Engine.FileExtension())
+	final := RemoteFile(r.RemotePath, r.Hostname, r.Source, database, started, r.Engine.FileExtension())
 	partial := final + PartialSuffix
 	r.Logger.Info(fmt.Sprintf("Backup of %s started.", database), "database", database)
 	size, created, err := r.upload(ctx, database, partial)
@@ -75,6 +85,7 @@ func (r *Runner) runOne(ctx context.Context, database string) Result {
 	r.Logger.Info(fmt.Sprintf("Backup of %s completed.", database),
 		"database", database, "size_bytes", size, "duration", duration.Round(time.Millisecond).String(), "remote_path", final)
 	return Result{Database: state.Database{
+		Source:     r.Source,
 		Name:       database,
 		Status:     state.StatusSuccess,
 		SizeBytes:  size,
@@ -91,7 +102,7 @@ func (r *Runner) failure(database string, err error) Result {
 	}
 	r.Logger.Error(fmt.Sprintf("Backup of %s failed.", database), "database", database, "error", err.Error())
 	return Result{
-		Database:    state.Database{Name: database, Status: state.StatusFailure, Error: err.Error()},
+		Database:    state.Database{Source: r.Source, Name: database, Status: state.StatusFailure, Error: err.Error()},
 		FailureKind: kind,
 	}
 }
@@ -165,25 +176,28 @@ func (r *Runner) stream(cmd *exec.Cmd, counter *countingWriter) (int64, error) {
 }
 
 func ExitCode(results []Result) int {
-	succeeded, uploadFailures := 0, 0
+	succeeded := 0
+	kinds := map[string]bool{}
 	for _, res := range results {
-		switch {
-		case res.Status == state.StatusSuccess:
+		if res.Status == state.StatusSuccess {
 			succeeded++
-		case res.FailureKind == FailureUpload:
-			uploadFailures++
+			continue
 		}
+		kinds[res.FailureKind] = true
 	}
 	switch {
 	case len(results) > 0 && succeeded == len(results):
 		return app.ExitOK
 	case succeeded > 0:
 		return app.ExitPartial
-	case len(results) > 0 && uploadFailures == len(results):
-		return app.ExitUploadFailed
-	default:
-		return app.ExitDumpFailed
+	case len(kinds) == 1:
+		for kind := range kinds {
+			if code, ok := failureExitCodes[kind]; ok {
+				return code
+			}
+		}
 	}
+	return app.ExitDumpFailed
 }
 
 func Databases(results []Result) []state.Database {

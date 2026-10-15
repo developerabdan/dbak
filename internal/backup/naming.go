@@ -15,10 +15,10 @@ func FileName(database string, at time.Time, extension string) string {
 	return fmt.Sprintf("%s_%s.%s", database, at.UTC().Format(timestampLayout), extension)
 }
 
-func RemoteDir(remotePath, hostname, database string) string {
-	return path.Join(remotePath, hostname, database)
+func RemoteDir(remotePath, hostname, source, database string) string {
+	return path.Join(remotePath, hostname, source, database)
 }
 
-func RemoteFile(remotePath, hostname, database string, at time.Time, extension string) string {
-	return path.Join(RemoteDir(remotePath, hostname, database), FileName(database, at, extension))
+func RemoteFile(remotePath, hostname, source, database string, at time.Time, extension string) string {
+	return path.Join(RemoteDir(remotePath, hostname, source, database), FileName(database, at, extension))
 }

@@ -34,6 +34,7 @@ const (
 
 type target struct {
 	name      string
+	source    string
 	engine    string
 	port      int
 	sslMode   string
@@ -51,20 +52,31 @@ func integrationDir(t *testing.T) string {
 	return dir
 }
 
+func sourceFor(t *testing.T, tg target) config.Source {
+	return config.Source{
+		Name:         tg.source,
+		Engine:       tg.engine,
+		Host:         "127.0.0.1",
+		Port:         tg.port,
+		Username:     "backup_ro",
+		PasswordFile: filepath.Join(integrationDir(t), "db_password"),
+		SSLMode:      tg.sslMode,
+		BinDir:       os.Getenv(tg.binEnv),
+		Databases:    tg.databases,
+	}
+}
+
 func writeConfig(t *testing.T, tg target, knownHosts string) backup.JobOptions {
+	t.Helper()
+	return writeSources(t, knownHosts, sourceFor(t, tg))
+}
+
+func writeSources(t *testing.T, knownHosts string, sources ...config.Source) backup.JobOptions {
 	t.Helper()
 	fixtures := integrationDir(t)
 	cfg := &config.Config{
 		Version: config.CurrentVersion,
-		Source: config.Source{
-			Engine:       tg.engine,
-			Host:         "127.0.0.1",
-			Port:         tg.port,
-			Username:     "backup_ro",
-			PasswordFile: filepath.Join(fixtures, "db_password"),
-			SSLMode:      tg.sslMode,
-			Databases:    tg.databases,
-		},
+		Sources: sources,
 		Destination: config.Destination{
 			Type:           "sftp",
 			Host:           sftpHost,
@@ -99,37 +111,37 @@ func pinHostKey(t *testing.T) string {
 	return file
 }
 
-func usePath(t *testing.T, envName string) {
-	t.Helper()
-	if dir := os.Getenv(envName); dir != "" {
-		t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	}
-}
-
 func waitForDatabase(t *testing.T, opts backup.JobOptions) {
 	t.Helper()
 	cfg, err := config.Load(opts.ConfigPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	password, err := config.ReadSecret(cfg.Source.PasswordFile)
+	for _, source := range cfg.Sources {
+		waitForSource(t, source, opts.StateDir)
+	}
+}
+
+func waitForSource(t *testing.T, source config.Source, stateDir string) {
+	t.Helper()
+	password, err := config.ReadSecret(source.PasswordFile)
 	if err != nil {
 		t.Fatal(err)
 	}
-	eng, err := backup.NewEngine(cfg.Source, password, opts.StateDir)
+	eng, err := backup.NewEngine(source, password, stateDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(90 * time.Second)
 	for {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		_, err := eng.Probe(ctx, cfg.Source.Databases[0])
+		_, err := eng.Probe(ctx, source.Databases[0])
 		cancel()
 		if err == nil {
 			return
 		}
 		if time.Now().After(deadline) {
-			t.Skipf("the database server on port %d is not available: %v", cfg.Source.Port, err)
+			t.Skipf("the database server on port %d is not available: %v", source.Port, err)
 		}
 		time.Sleep(2 * time.Second)
 	}
@@ -206,10 +218,10 @@ func verifyMySQL(t *testing.T, data []byte) {
 
 func targets() []target {
 	return []target{
-		{"postgres 16", config.EnginePostgres, 55416, "disable", "DBAK_IT_PG_BIN", []string{"app_prod"}, verifyPostgres},
-		{"postgres 13", config.EnginePostgres, 55413, "disable", "DBAK_IT_PG_BIN", []string{"app_prod"}, verifyPostgres},
-		{"mysql 8.0", config.EngineMySQL, 53380, "preferred", "DBAK_IT_MYSQL_BIN", []string{"app_prod"}, verifyMySQL},
-		{"mariadb 10.11", config.EngineMySQL, 53310, "preferred", "DBAK_IT_MARIADB_BIN", []string{"app_prod"}, verifyMySQL},
+		{"postgres 16", "pg16", config.EnginePostgres, 55416, "disable", "DBAK_IT_PG_BIN", []string{"app_prod"}, verifyPostgres},
+		{"postgres 13", "pg13", config.EnginePostgres, 55413, "disable", "DBAK_IT_PG_BIN", []string{"app_prod"}, verifyPostgres},
+		{"mysql 8.0", "mysql8", config.EngineMySQL, 53380, "preferred", "DBAK_IT_MYSQL_BIN", []string{"app_prod"}, verifyMySQL},
+		{"mariadb 10.11", "mariadb", config.EngineMySQL, 53310, "preferred", "DBAK_IT_MARIADB_BIN", []string{"app_prod"}, verifyMySQL},
 	}
 }
 
@@ -221,7 +233,6 @@ func TestIntegrationBackupEndToEnd(t *testing.T) {
 	}
 	for _, tg := range targets() {
 		t.Run(tg.name, func(t *testing.T) {
-			usePath(t, tg.binEnv)
 			opts := writeConfig(t, tg, knownHosts)
 			waitForDatabase(t, opts)
 			var logs bytes.Buffer
@@ -241,7 +252,7 @@ func TestIntegrationBackupEndToEnd(t *testing.T) {
 			if result.Status != state.StatusSuccess || result.SizeBytes == 0 {
 				t.Fatalf("unexpected result: %+v", result)
 			}
-			if !strings.HasPrefix(result.RemotePath, path.Join(sftpRemotePath, hostname, "app_prod")+"/") {
+			if !strings.HasPrefix(result.RemotePath, path.Join(sftpRemotePath, hostname, tg.source, "app_prod")+"/") {
 				t.Fatalf("unexpected remote path %s", result.RemotePath)
 			}
 			tg.verify(t, readRemote(t, knownHosts, result.RemotePath))
@@ -256,8 +267,7 @@ func TestIntegrationBackupEndToEnd(t *testing.T) {
 
 func TestIntegrationMissingPrivilegeFailsWithoutFiles(t *testing.T) {
 	knownHosts := pinHostKey(t)
-	tg := target{"postgres 13 restricted", config.EnginePostgres, 55413, "disable", "DBAK_IT_PG_BIN", []string{"app_restricted"}, nil}
-	usePath(t, tg.binEnv)
+	tg := target{"postgres 13 restricted", "pg13", config.EnginePostgres, 55413, "disable", "DBAK_IT_PG_BIN", []string{"app_restricted"}, nil}
 	opts := writeConfig(t, tg, knownHosts)
 	waitForDatabase(t, opts)
 	_, err := backup.RunJob(context.Background(), opts)
@@ -273,7 +283,7 @@ func TestIntegrationMissingPrivilegeFailsWithoutFiles(t *testing.T) {
 		t.Fatalf("the error does not name the table: %s", result.Error)
 	}
 	hostname, _ := os.Hostname()
-	for _, name := range remoteNames(t, knownHosts, path.Join(sftpRemotePath, hostname, "app_restricted")) {
+	for _, name := range remoteNames(t, knownHosts, path.Join(sftpRemotePath, hostname, tg.source, "app_restricted")) {
 		t.Fatalf("a remote file exists after a failed dump: %s", name)
 	}
 }
@@ -292,7 +302,6 @@ func TestIntegrationChangedHostKeyIsRejected(t *testing.T) {
 		t.Fatal(err)
 	}
 	tg := targets()[0]
-	usePath(t, tg.binEnv)
 	opts := writeConfig(t, tg, wrong)
 	waitForDatabase(t, opts)
 	_, err = backup.RunJob(context.Background(), opts)
@@ -308,7 +317,6 @@ func TestIntegrationRetentionRemovesOldFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	tg := targets()[0]
-	usePath(t, tg.binEnv)
 	opts := writeConfig(t, tg, knownHosts)
 	waitForDatabase(t, opts)
 	cfg, err := config.Load(opts.ConfigPath)
@@ -320,7 +328,7 @@ func TestIntegrationRetentionRemovesOldFiles(t *testing.T) {
 	if err := config.Save(opts.ConfigPath, cfg); err != nil {
 		t.Fatal(err)
 	}
-	dir := path.Join(cfg.Destination.RemotePath, hostname, "app_prod")
+	dir := path.Join(cfg.Destination.RemotePath, hostname, tg.source, "app_prod")
 	client := dialTestSFTP(t, knownHosts)
 	if err := client.MkdirAll(dir); err != nil {
 		t.Fatal(err)
@@ -346,5 +354,63 @@ func TestIntegrationRetentionRemovesOldFiles(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), "Retention removed 3 old files of app_prod.") {
 		t.Fatalf("got logs:\n%s", logs.String())
+	}
+}
+
+func TestIntegrationTwoSources(t *testing.T) {
+	knownHosts := pinHostKey(t)
+	hostname, err := os.Hostname()
+	if err != nil {
+		t.Fatal(err)
+	}
+	all := targets()
+	pg, mysql := all[0], all[2]
+	opts := writeSources(t, knownHosts, sourceFor(t, pg), sourceFor(t, mysql))
+	waitForDatabase(t, opts)
+	var logs bytes.Buffer
+	opts.Logger = slog.New(slog.NewTextHandler(&logs, nil))
+	record, err := backup.RunJob(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("the run failed: %v\n%s", err, logs.String())
+	}
+	if record.Status != state.StatusSuccess || len(record.Databases) != 2 {
+		t.Fatalf("got record %+v", record)
+	}
+	for i, tg := range []target{pg, mysql} {
+		result := record.Databases[i]
+		if result.Source != tg.source || !strings.HasPrefix(result.RemotePath, path.Join(sftpRemotePath, hostname, tg.source, "app_prod")+"/") {
+			t.Fatalf("got result %+v for the source %s", result, tg.source)
+		}
+		tg.verify(t, readRemote(t, knownHosts, result.RemotePath))
+	}
+}
+
+func TestIntegrationOneSourceFailsGivesPartial(t *testing.T) {
+	knownHosts := pinHostKey(t)
+	pg := targets()[0]
+	good := sourceFor(t, pg)
+	waitForSource(t, good, t.TempDir())
+	bad := sourceFor(t, pg)
+	bad.Name = "pg_down"
+	bad.Port = 55499
+	opts := writeSources(t, knownHosts, bad, good)
+	var logs bytes.Buffer
+	opts.Logger = slog.New(slog.NewTextHandler(&logs, nil))
+	record, err := backup.RunJob(context.Background(), opts)
+	if app.ExitCode(err) != app.ExitPartial {
+		t.Fatalf("got exit code %d, want %d: %v\n%s", app.ExitCode(err), app.ExitPartial, err, logs.String())
+	}
+	if record.Status != state.StatusPartial || len(record.Databases) != 2 {
+		t.Fatalf("got record %+v", record)
+	}
+	down, up := record.Databases[0], record.Databases[1]
+	if down.Source != "pg_down" || down.Status != state.StatusFailure || down.Error == "" {
+		t.Fatalf("got %+v for the source that is not available", down)
+	}
+	if up.Source != pg.source || up.Status != state.StatusSuccess {
+		t.Fatalf("got %+v for the good source", up)
+	}
+	if !strings.Contains(logs.String(), "dbak continues with the next source") {
+		t.Fatalf("the log does not show the failed source:\n%s", logs.String())
 	}
 }

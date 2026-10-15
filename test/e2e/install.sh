@@ -134,7 +134,8 @@ grep -qF "$password" <<<"$out" && fail "the output contains the password"
 docker exec "$vm" sh -c '
 	set -e
 	test "$(stat -c %U:%a /etc/dbak/config.yaml)" = dbak:600
-	test "$(stat -c %U:%a /etc/dbak/secrets/db_password)" = dbak:600
+	test "$(stat -c %U:%a /etc/dbak/secrets/default/db_password)" = dbak:600
+	grep -q "^version: 2" /etc/dbak/config.yaml
 	test "$(stat -c %U:%a /etc/dbak/secrets/id_ed25519)" = dbak:600
 	grep -q "private_key_file: /etc/dbak/secrets/id_ed25519" /etc/dbak/config.yaml
 	systemctl is-active dbak.timer

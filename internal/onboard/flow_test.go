@@ -82,7 +82,7 @@ func newHarness(t *testing.T) *harness {
 		RunBackup: func(context.Context) (state.Run, error) {
 			h.backups++
 			return state.Run{Status: state.StatusSuccess, Databases: []state.Database{
-				{Name: "app_prod", Status: state.StatusSuccess, SizeBytes: 2048, RemotePath: "/backups/vm-app-01/app_prod/app_prod_20261015T120000Z.dump"},
+				{Source: "postgres", Name: "app_prod", Status: state.StatusSuccess, SizeBytes: 2048, RemotePath: "/backups/vm-app-01/postgres/app_prod/app_prod_20261015T120000Z.dump"},
 			}}, nil
 		},
 		SendTelegramTest: func(_ context.Context, token, chatID string) error {
@@ -131,6 +131,17 @@ func (h *harness) allowGeneratedKey(t *testing.T) func() {
 	}
 }
 
+func sourceStart(engineName string) []answer {
+	return []answer{
+		{match: "database engine", value: engineName},
+		{match: "Source name"},
+	}
+}
+
+func noMoreSources() answer {
+	return answer{match: "Add another database source?", value: false}
+}
+
 func credentialAnswers(password string) []answer {
 	return []answer{
 		{match: "Database host", value: "127.0.0.1"},
@@ -139,6 +150,12 @@ func credentialAnswers(password string) []answer {
 		{match: "Database password", value: password},
 		{match: "SSL mode"},
 	}
+}
+
+func (h *harness) onePostgresSource() []answer {
+	answers := append(sourceStart(config.EnginePostgres), answer{match: "database user for backup", value: "yes"})
+	answers = append(answers, credentialAnswers("s3cret")...)
+	return append(answers, answer{match: "Select the databases"}, noMoreSources())
 }
 
 func (h *harness) destinationAnswers(t *testing.T) []answer {
@@ -176,15 +193,13 @@ func TestFullOnboarding(t *testing.T) {
 	h := newHarness(t)
 	h.eng.probeErrors = []error{&engine.ConnectError{Message: "PostgreSQL rejected the user name or password. Make sure that the credentials are correct"}}
 	h.eng.privilegeBad["app_audit"] = 1
-	answers := []answer{
-		{match: "database engine", value: config.EnginePostgres},
-		{match: "database user for backup", value: "yes"},
-	}
+	answers := append(sourceStart(config.EnginePostgres), answer{match: "database user for backup", value: "yes"})
 	answers = append(answers, credentialAnswers("wrong")...)
 	answers = append(answers, credentialAnswers("s3cret")...)
 	answers = append(answers,
 		answer{match: "Select the databases"},
 		answer{match: "found problems", value: "retry"},
+		noMoreSources(),
 	)
 	answers = append(answers, h.destinationAnswers(t)...)
 	answers = append(answers, tailAnswers()...)
@@ -203,11 +218,12 @@ func TestFullOnboarding(t *testing.T) {
 		"authorized_keys",
 		"OK: The test upload to " + filepath.Join(h.remoteRoot, "vm-app-01") + " passed.",
 		"02:00 Asia/Jakarta = 19:00 UTC on the day before",
-		"Database password: ********",
+		"Source:            postgres",
+		"  Password:        ********",
 		"Webhook:           https://hooks.example.com/********",
 		"chat -1001, token ********",
 		"OK: dbak installed the systemd timer dbak.timer: daily at 02:00 Asia/Jakarta.",
-		"OK: app_prod: 2.0 KiB",
+		"OK: postgres/app_prod: 2.0 KiB",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the output does not contain %q", want)
@@ -222,15 +238,22 @@ func TestFullOnboarding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(cfg.Source.Databases, []string{"app_audit", "app_prod"}) {
-		t.Fatalf("got databases %v, want postgres not selected", cfg.Source.Databases)
+	if len(cfg.Sources) != 1 || cfg.Sources[0].Name != "postgres" {
+		t.Fatalf("got sources %+v, want one source with the name postgres", cfg.Sources)
+	}
+	if !slices.Equal(cfg.Sources[0].Databases, []string{"app_audit", "app_prod"}) {
+		t.Fatalf("got databases %v, want postgres not selected", cfg.Sources[0].Databases)
 	}
 	if cfg.Schedule.Timezone != "Asia/Jakarta" || cfg.Schedule.RandomizedDelay != "5m" || cfg.Destination.RemotePath != h.remoteRoot {
 		t.Fatalf("unexpected config: %+v %+v", cfg.Schedule, cfg.Destination)
 	}
-	assertSecret(t, cfg.Source.PasswordFile, "s3cret")
+	if cfg.Sources[0].PasswordFile != h.env.Paths.SourcePasswordFile("postgres") {
+		t.Fatalf("got password file %s", cfg.Sources[0].PasswordFile)
+	}
+	assertSecret(t, cfg.Sources[0].PasswordFile, "s3cret")
 	assertSecret(t, cfg.Notify.TelegramTokenFile, "123:ABC")
 	assertMode(t, h.env.Paths.SecretsDir(), 0o700)
+	assertMode(t, filepath.Dir(cfg.Sources[0].PasswordFile), 0o700)
 	assertMode(t, h.env.Paths.ConfigPath, 0o600)
 	assertMode(t, cfg.Destination.PrivateKeyFile, 0o600)
 	assertMode(t, cfg.Destination.KnownHostsFile, 0o600)
@@ -278,8 +301,7 @@ func assertMode(t *testing.T, file string, want os.FileMode) {
 func TestOnboardingWithUserHelper(t *testing.T) {
 	h := newHarness(t)
 	h.env.HasSystemd = false
-	answers := []answer{
-		{match: "database engine", value: config.EngineMySQL},
+	answers := append(sourceStart(config.EngineMySQL), []answer{
 		{match: "database user for backup", value: "no"},
 		{match: "version of the database server", value: "mysql-8.0.20"},
 		{match: "User name for the backup user"},
@@ -294,7 +316,8 @@ func TestOnboardingWithUserHelper(t *testing.T) {
 		{match: "Database password", value: ""},
 		{match: "SSL mode"},
 		{match: "Select the databases", value: []string{"app_prod"}},
-	}
+		noMoreSources(),
+	}...)
 	h.eng.server = engine.ServerInfo{Flavor: engine.FlavorMySQL, Version: "8.0.36", Major: 8}
 	h.eng.client = engine.ClientInfo{Text: "mysqldump  Ver 8.0.36", Major: 8}
 	answers = append(answers, h.destinationAnswers(t)...)
@@ -314,10 +337,11 @@ func TestOnboardingWithUserHelper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Source.Port != 3306 || cfg.Source.SSLMode != "preferred" || cfg.Source.Username != "backup_ro" {
-		t.Fatalf("unexpected source: %+v", cfg.Source)
+	src := cfg.Sources[0]
+	if src.Name != "mysql" || src.Port != 3306 || src.SSLMode != "preferred" || src.Username != "backup_ro" {
+		t.Fatalf("unexpected source: %+v", src)
 	}
-	password, err := config.ReadSecret(cfg.Source.PasswordFile)
+	password, err := config.ReadSecret(src.PasswordFile)
 	if err != nil || len(password) != 32 || !strings.Contains(out, password) {
 		t.Fatalf("got password %q %v, want the generated password", password, err)
 	}
@@ -329,10 +353,9 @@ func TestOnboardingWithUserHelper(t *testing.T) {
 func TestMissingClientToolDeclined(t *testing.T) {
 	h := newHarness(t)
 	h.env.LookPath = func(string) (string, error) { return "", errors.New("not found") }
-	err := h.run(t,
-		answer{match: "database engine", value: config.EnginePostgres},
+	err := h.run(t, append(sourceStart(config.EnginePostgres),
 		answer{match: "Install the package postgresql-client now?", value: false},
-	)
+	)...)
 	if err == nil || !strings.Contains(err.Error(), "pg_dump is not installed") {
 		t.Fatalf("got %v", err)
 	}
@@ -361,7 +384,7 @@ func TestMissingClientToolInstalled(t *testing.T) {
 	h.ui = newFakeUI(t, answer{match: "Install the package", value: true})
 	h.env.UI = h.ui
 	s := newSession(h.env)
-	s.cfg.Source.Engine = config.EnginePostgres
+	s.cfg.Sources = []config.Source{{Name: "postgres", Engine: config.EnginePostgres}}
 	if err := s.ensureClientTool(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -373,10 +396,7 @@ func TestMissingClientToolInstalled(t *testing.T) {
 func TestOldPostgresClientStops(t *testing.T) {
 	h := newHarness(t)
 	h.eng.client = engine.ClientInfo{Text: "pg_dump (PostgreSQL) 14.10", Major: 14}
-	answers := []answer{
-		{match: "database engine", value: config.EnginePostgres},
-		{match: "database user for backup", value: "yes"},
-	}
+	answers := append(sourceStart(config.EnginePostgres), answer{match: "database user for backup", value: "yes"})
 	answers = append(answers, credentialAnswers("s3cret")...)
 	err := h.run(t, answers...)
 	if err == nil || !strings.Contains(err.Error(), "pg_dump 14 cannot make a backup of a PostgreSQL 16 server") {
@@ -432,12 +452,7 @@ func TestRejectedKeyGivesChoice(t *testing.T) {
 
 func TestExistingConfigEditRetention(t *testing.T) {
 	h := newHarness(t)
-	answers := []answer{
-		{match: "database engine", value: config.EnginePostgres},
-		{match: "database user for backup", value: "yes"},
-	}
-	answers = append(answers, credentialAnswers("s3cret")...)
-	answers = append(answers, answer{match: "Select the databases"})
+	answers := h.onePostgresSource()
 	answers = append(answers, h.destinationAnswers(t)...)
 	answers = append(answers, tailAnswers()...)
 	answers = append(answers, answer{match: "Run the first backup now?", value: false})
@@ -466,19 +481,14 @@ func TestExistingConfigEditRetention(t *testing.T) {
 	if len(h.schedules) != 2 {
 		t.Fatalf("got %d schedule installs, want 2", len(h.schedules))
 	}
-	assertSecret(t, cfg.Source.PasswordFile, "s3cret")
+	assertSecret(t, cfg.Sources[0].PasswordFile, "s3cret")
 	assertSecret(t, cfg.Notify.TelegramTokenFile, "123:ABC")
 }
 
 func TestScheduleInstallFailureContinues(t *testing.T) {
 	h := newHarness(t)
 	h.scheduleErr = errors.New("systemd does not accept the schedule")
-	answers := []answer{
-		{match: "database engine", value: config.EnginePostgres},
-		{match: "database user for backup", value: "yes"},
-	}
-	answers = append(answers, credentialAnswers("s3cret")...)
-	answers = append(answers, answer{match: "Select the databases"})
+	answers := h.onePostgresSource()
 	answers = append(answers, h.destinationAnswers(t)...)
 	answers = append(answers, tailAnswers()...)
 	answers = append(answers, answer{match: "Run the first backup now?", value: true})

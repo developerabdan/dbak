@@ -45,18 +45,48 @@ func Parse(data []byte) (*Config, error) {
 	return cfg, nil
 }
 
+type document struct {
+	Config `yaml:",inline"`
+	Source *Source `yaml:"source"`
+}
+
 func Decode(data []byte) (*Config, error) {
-	var cfg Config
+	var doc document
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
-	if err := decoder.Decode(&cfg); err != nil {
+	if err := decoder.Decode(&doc); err != nil {
 		if errors.Is(err, io.EOF) {
 			return nil, errors.New("the config file is empty. Run \"dbak init\" to make it")
 		}
 		return nil, fmt.Errorf("the config file has a YAML error: %w. Correct the line in the message", err)
 	}
+	cfg := doc.Config
+	if err := convertLegacy(&cfg, doc.Source); err != nil {
+		return nil, err
+	}
 	cfg.applyDefaults()
 	return &cfg, nil
+}
+
+func convertLegacy(cfg *Config, legacy *Source) error {
+	if cfg.Version != LegacyVersion {
+		if legacy != nil {
+			return fmt.Errorf("the config file has a source block, but version %d uses a sources list. Move the source into sources", cfg.Version)
+		}
+		return nil
+	}
+	if len(cfg.Sources) > 0 {
+		return errors.New("the config file has version 1 and a sources list. Set version: 2")
+	}
+	if legacy != nil {
+		converted := *legacy
+		if converted.Name == "" {
+			converted.Name = LegacySourceName
+		}
+		cfg.Sources = []Source{converted}
+	}
+	cfg.Version = CurrentVersion
+	return nil
 }
 
 func Save(path string, cfg *Config) error {

@@ -62,6 +62,7 @@ type fixture struct {
 	clock     string
 	clockErr  error
 	dir       string
+	engines   map[string]*fakeEngine
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -82,10 +83,10 @@ func newFixture(t *testing.T) *fixture {
 	}
 	cfg := &config.Config{
 		Version: config.CurrentVersion,
-		Source: config.Source{
-			Engine: config.EnginePostgres, Host: "10.0.0.10", Port: 5432, Username: "backup_ro",
+		Sources: []config.Source{{
+			Name: "main_pg", Engine: config.EnginePostgres, Host: "10.0.0.10", Port: 5432, Username: "backup_ro",
 			PasswordFile: filepath.Join(secrets, "db_password"), SSLMode: "prefer", Databases: []string{"app_prod", "app_audit"},
-		},
+		}},
 		Destination: config.Destination{
 			Type: "sftp", Host: "backup.example.com", Port: 22, Username: "dbak",
 			PrivateKeyFile: filepath.Join(secrets, "id_ed25519"), KnownHostsFile: filepath.Join(secrets, "known_hosts"), RemotePath: "/backups",
@@ -116,7 +117,10 @@ func newFixture(t *testing.T) *fixture {
 		StateDir:   state,
 		Hostname:   "vm-app-01",
 		Owner:      &owner,
-		NewEngine: func(config.Source, string) (engine.Full, error) {
+		NewEngine: func(source config.Source, _ string) (engine.Full, error) {
+			if other, ok := f.engines[source.Name]; ok {
+				return other, nil
+			}
 			return f.eng, nil
 		},
 		DialSFTP: func(sftp.Config) (SFTPClient, error) {
@@ -155,7 +159,7 @@ func find(t *testing.T, results []Result, name string) Result {
 func TestAllChecksPass(t *testing.T) {
 	f := newFixture(t)
 	results := Run(context.Background(), f.env)
-	want := "Config=OK Permissions=OK Client tool=OK Database=OK Dump check app_prod=OK Dump check app_audit=OK SFTP=OK Schedule=OK Clock=OK"
+	want := "Config=OK Permissions=OK Client tool main_pg=OK Database main_pg=OK Dump check main_pg/app_prod=OK Dump check main_pg/app_audit=OK SFTP=OK Schedule=OK Clock=OK"
 	if got := levels(results); got != want {
 		t.Fatalf("got %s\nwant %s", got, want)
 	}
@@ -228,7 +232,7 @@ func TestDatabaseFailureSkipsDumpChecks(t *testing.T) {
 	f := newFixture(t)
 	f.eng.probeErr = &engine.ConnectError{Message: "cannot connect to PostgreSQL at 10.0.0.10:5432"}
 	results := Run(context.Background(), f.env)
-	want := "Config=OK Permissions=OK Client tool=OK Database=FAIL SFTP=OK Schedule=OK Clock=OK"
+	want := "Config=OK Permissions=OK Client tool main_pg=OK Database main_pg=FAIL SFTP=OK Schedule=OK Clock=OK"
 	if got := levels(results); got != want {
 		t.Fatalf("got %s\nwant %s", got, want)
 	}
@@ -237,8 +241,8 @@ func TestDatabaseFailureSkipsDumpChecks(t *testing.T) {
 func TestOldClient(t *testing.T) {
 	f := newFixture(t)
 	f.eng.client = engine.ClientInfo{Text: "pg_dump (PostgreSQL) 14.2", Major: 14}
-	r := find(t, Run(context.Background(), f.env), "Client tool")
-	if r.Level != Fail || !strings.Contains(r.Fix, "PostgreSQL 16 client tools") {
+	r := find(t, Run(context.Background(), f.env), "Client tool main_pg")
+	if r.Level != Fail || !strings.Contains(r.Fix, "PostgreSQL 16 client tools") || !strings.Contains(r.Fix, "bin_dir of the source main_pg") {
 		t.Fatalf("got %+v", r)
 	}
 }
@@ -248,8 +252,8 @@ func TestDumpCheckProblems(t *testing.T) {
 	f.eng.privileges["app_audit"] = engine.PrivilegeReport{Problems: []string{`"public"."audit_log"`}, FixSQL: "GRANT SELECT ON ALL TABLES\nIN SCHEMA public TO backup_ro;"}
 	f.eng.schemaErr["app_prod"] = errors.New("pg_dump: error: permission denied for schema private")
 	results := Run(context.Background(), f.env)
-	prod := find(t, results, "Dump check app_prod")
-	audit := find(t, results, "Dump check app_audit")
+	prod := find(t, results, "Dump check main_pg/app_prod")
+	audit := find(t, results, "Dump check main_pg/app_audit")
 	if prod.Level != Fail || !strings.Contains(prod.Message, "permission denied for schema private") {
 		t.Fatalf("got %+v", prod)
 	}
@@ -316,5 +320,45 @@ func TestClock(t *testing.T) {
 				t.Fatalf("got %+v", r)
 			}
 		})
+	}
+}
+
+func TestEachSourceIsExamined(t *testing.T) {
+	f := newFixture(t)
+	cfg, err := config.Load(f.env.ConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(f.dir, "etc", "secrets", "shop_mysql")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	password := filepath.Join(dir, "db_password")
+	if err := os.WriteFile(password, []byte("test-value\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Sources = append(cfg.Sources, config.Source{
+		Name: "shop_mysql", Engine: config.EngineMySQL, Host: "10.0.0.11", Port: 3306, Username: "backup_ro",
+		PasswordFile: password, SSLMode: "preferred", Databases: []string{"shop"},
+	})
+	if err := config.Save(f.env.ConfigPath, cfg); err != nil {
+		t.Fatal(err)
+	}
+	f.engines = map[string]*fakeEngine{"shop_mysql": {
+		client:   engine.ClientInfo{Text: "mysqldump Ver 8.0.36"},
+		probeErr: &engine.ConnectError{Message: "cannot connect to MySQL at 10.0.0.11:3306"},
+	}}
+	results := Run(context.Background(), f.env)
+	want := "Config=OK Permissions=OK Client tool main_pg=OK Database main_pg=OK Dump check main_pg/app_prod=OK Dump check main_pg/app_audit=OK " +
+		"Client tool shop_mysql=OK Database shop_mysql=FAIL SFTP=OK Schedule=OK Clock=OK"
+	if got := levels(results); got != want {
+		t.Fatalf("got %s\nwant %s", got, want)
+	}
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r := find(t, Run(context.Background(), f.env), "Permissions")
+	if r.Level != Fail || r.Fix != "Run: sudo chmod 0700 "+dir {
+		t.Fatalf("got %+v", r)
 	}
 }

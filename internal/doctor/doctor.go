@@ -64,8 +64,10 @@ func Run(ctx context.Context, env *Env) []Result {
 		return d.results
 	}
 	d.checkPermissions()
-	if eng, ok := d.checkDatabase(ctx); ok {
-		d.checkDumps(ctx, eng)
+	for _, source := range d.cfg.Sources {
+		if eng, ok := d.checkDatabase(ctx, source); ok {
+			d.checkDumps(ctx, source, eng)
+		}
 	}
 	d.checkSFTP()
 	d.checkSchedule(ctx)
@@ -108,13 +110,21 @@ type fileRule struct {
 }
 
 func (d *doctor) fileRules() []fileRule {
+	secretsDir := filepath.Join(filepath.Dir(d.env.ConfigPath), "secrets")
 	rules := []fileRule{
 		{path: d.env.ConfigPath, mode: 0o600},
-		{path: filepath.Join(filepath.Dir(d.env.ConfigPath), "secrets"), mode: 0o700, dir: true},
-		{path: d.cfg.Source.PasswordFile, mode: 0o600},
-		{path: d.cfg.Destination.PrivateKeyFile, mode: 0o600},
-		{path: d.cfg.Destination.KnownHostsFile, mode: 0o600},
+		{path: secretsDir, mode: 0o700, dir: true},
 	}
+	for _, source := range d.cfg.Sources {
+		if dir := filepath.Dir(source.PasswordFile); dir != secretsDir {
+			rules = append(rules, fileRule{path: dir, mode: 0o700, dir: true})
+		}
+		rules = append(rules, fileRule{path: source.PasswordFile, mode: 0o600})
+	}
+	rules = append(rules,
+		fileRule{path: d.cfg.Destination.PrivateKeyFile, mode: 0o600},
+		fileRule{path: d.cfg.Destination.KnownHostsFile, mode: 0o600},
+	)
 	if d.cfg.Notify.TelegramTokenFile != "" {
 		rules = append(rules, fileRule{path: d.cfg.Notify.TelegramTokenFile, mode: 0o600})
 	}
@@ -163,46 +173,47 @@ func fileUID(info os.FileInfo) (int, bool) {
 	return int(st.Uid), true
 }
 
-func (d *doctor) checkDatabase(ctx context.Context) (engine.Full, bool) {
-	password, err := config.ReadSecret(d.cfg.Source.PasswordFile)
+func (d *doctor) checkDatabase(ctx context.Context, source config.Source) (engine.Full, bool) {
+	database, tool := "Database "+source.Name, "Client tool "+source.Name
+	password, err := config.ReadSecret(source.PasswordFile)
 	if err != nil {
-		d.add("Database", Fail, app.Sentence(err.Error()), "Run the command with sudo, or run: sudo dbak init")
+		d.add(database, Fail, app.Sentence(err.Error()), "Run the command with sudo, or run: sudo dbak init")
 		return nil, false
 	}
-	eng, err := d.env.NewEngine(d.cfg.Source, password)
+	eng, err := d.env.NewEngine(source, password)
 	if err != nil {
-		d.add("Database", Fail, app.Sentence(err.Error()), "Correct source.engine in the config.")
+		d.add(database, Fail, app.Sentence(err.Error()), "Correct the engine of the source "+source.Name+" in the config.")
 		return nil, false
 	}
 	client, err := eng.ClientVersion(ctx)
 	if err != nil {
-		d.add("Client tool", Fail, app.Sentence(err.Error()), "Install the client tool, or run: sudo dbak init")
+		d.add(tool, Fail, app.Sentence(err.Error()), "Install the client tool, or correct bin_dir of the source "+source.Name+".")
 		return nil, false
 	}
 	info, err := eng.ProbeServer(ctx)
 	if err != nil {
-		d.add("Client tool", OK, client.Text, "")
-		d.add("Database", Fail, app.Sentence(err.Error()), "Make sure that the database server runs and accepts the backup user.")
+		d.add(tool, OK, client.Text, "")
+		d.add(database, Fail, app.Sentence(err.Error()), "Make sure that the database server runs and accepts the backup user.")
 		return nil, false
 	}
-	d.checkClient(client, info)
-	d.add("Database", OK, fmt.Sprintf("Connected to %s %s at %s:%d.", flavorName(info.Flavor), info.Version, d.cfg.Source.Host, d.cfg.Source.Port), "")
+	d.checkClient(tool, source, client, info)
+	d.add(database, OK, fmt.Sprintf("Connected to %s %s at %s:%d.", flavorName(info.Flavor), info.Version, source.Host, source.Port), "")
 	return eng, true
 }
 
-func (d *doctor) checkClient(client engine.ClientInfo, info engine.ServerInfo) {
-	if d.cfg.Source.Engine == config.EnginePostgres {
+func (d *doctor) checkClient(name string, source config.Source, client engine.ClientInfo, info engine.ServerInfo) {
+	if source.Engine == config.EnginePostgres {
 		var tooOld *engine.ClientTooOldError
 		if err := postgres.CheckClient(client, info); errors.As(err, &tooOld) {
-			d.add("Client tool", Fail, app.Sentence(err.Error()), fmt.Sprintf("Install the PostgreSQL %d client tools from the PGDG repository.", tooOld.Server))
+			d.add(name, Fail, app.Sentence(err.Error()), fmt.Sprintf("Install the PostgreSQL %d client tools from the PGDG repository, then set bin_dir of the source %s.", tooOld.Server, source.Name))
 			return
 		}
 	}
 	if info.Flavor == engine.FlavorMySQL && client.MariaDB {
-		d.add("Client tool", Warn, client.Text+". The server is MySQL, but the client tool is from MariaDB.", "Install the MySQL client tools if the backup fails.")
+		d.add(name, Warn, client.Text+". The server is MySQL, but the client tool is from MariaDB.", "Install the MySQL client tools if the backup fails.")
 		return
 	}
-	d.add("Client tool", OK, client.Text, "")
+	d.add(name, OK, client.Text, "")
 }
 
 func flavorName(flavor string) string {
@@ -215,9 +226,9 @@ func flavorName(flavor string) string {
 	return "PostgreSQL"
 }
 
-func (d *doctor) checkDumps(ctx context.Context, eng engine.Full) {
-	for _, db := range d.cfg.Source.Databases {
-		name := "Dump check " + db
+func (d *doctor) checkDumps(ctx context.Context, source config.Source, eng engine.Full) {
+	for _, db := range source.Databases {
+		name := "Dump check " + source.Name + "/" + db
 		report, err := eng.PrivilegeCheck(ctx, db)
 		if err != nil {
 			d.add(name, Fail, "Cannot examine the privileges: "+app.Sentence(err.Error()), "Make sure that the backup user can connect to "+db+".")

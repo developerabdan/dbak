@@ -9,11 +9,13 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/developerabdan/dbak/internal/app"
 	"github.com/developerabdan/dbak/internal/config"
+	"github.com/developerabdan/dbak/internal/notify"
 	"github.com/developerabdan/dbak/internal/state"
 )
 
@@ -21,23 +23,39 @@ const masked = "********"
 
 func (s *session) summary() string {
 	c := s.cfg
-	lines := []string{
-		"Database engine:   " + c.Source.Engine,
-		fmt.Sprintf("Database server:   %s:%d (ssl_mode %s)", c.Source.Host, c.Source.Port, c.Source.SSLMode),
-		"Database user:     " + c.Source.Username,
-		"Database password: " + masked,
-		"Databases:         " + strings.Join(c.Source.Databases, ", "),
-		fmt.Sprintf("SFTP server:       %s@%s:%d", c.Destination.Username, c.Destination.Host, c.Destination.Port),
-		"Remote directory:  " + path.Join(c.Destination.RemotePath, s.env.Hostname),
-		"Private key:       " + c.Destination.PrivateKeyFile,
-		"Schedule:          " + describeSchedule(c.Schedule),
-		fmt.Sprintf("Retention:         %d daily, %d weekly, %d monthly", c.Retention.Daily, c.Retention.Weekly, c.Retention.Monthly),
-		"Notifications:     " + c.Notify.When,
-		"Webhook:           " + maskURL(c.Notify.WebhookURL),
-		"Telegram:          " + describeTelegram(c.Notify),
-		"Healthcheck:       " + maskURL(c.Notify.HealthcheckURL),
+	var lines []string
+	for _, src := range c.Sources {
+		lines = append(lines,
+			"Source:            "+src.Name,
+			"  Engine:          "+src.Engine,
+			fmt.Sprintf("  Server:          %s:%d (ssl_mode %s)", src.Host, src.Port, src.SSLMode),
+			"  User:            "+src.Username,
+			"  Password:        "+masked,
+			"  Databases:       "+strings.Join(src.Databases, ", "),
+		)
+		if src.BinDir != "" {
+			lines = append(lines, "  Client tools:    "+src.BinDir)
+		}
+		if src.Retention != nil {
+			lines = append(lines, "  Retention:       "+describeRetention(*src.Retention))
+		}
 	}
+	lines = append(lines,
+		fmt.Sprintf("SFTP server:       %s@%s:%d", c.Destination.Username, c.Destination.Host, c.Destination.Port),
+		"Remote directory:  "+path.Join(c.Destination.RemotePath, s.env.Hostname),
+		"Private key:       "+c.Destination.PrivateKeyFile,
+		"Schedule:          "+describeSchedule(c.Schedule),
+		"Retention:         "+describeRetention(c.Retention),
+		"Notifications:     "+c.Notify.When,
+		"Webhook:           "+maskURL(c.Notify.WebhookURL),
+		"Telegram:          "+describeTelegram(c.Notify),
+		"Healthcheck:       "+maskURL(c.Notify.HealthcheckURL),
+	)
 	return strings.Join(lines, "\n")
+}
+
+func describeRetention(r config.Retention) string {
+	return fmt.Sprintf("%d daily, %d weekly, %d monthly", r.Daily, r.Weekly, r.Monthly)
 }
 
 func describeSchedule(sc config.Schedule) string {
@@ -103,11 +121,17 @@ func (s *session) save() error {
 	if err := s.ensureSecretsDir(); err != nil {
 		return err
 	}
-	if s.password == "" {
-		return errors.New("the database password is empty. Run dbak init again and type the password")
-	}
-	if err := s.writeSecret(s.cfg.Source.PasswordFile, []byte(s.password+"\n")); err != nil {
-		return err
+	for _, src := range s.cfg.Sources {
+		password := s.passwords[src.Name]
+		if password == "" {
+			return fmt.Errorf("the password of the source %s is empty. Run dbak init again and type the password", src.Name)
+		}
+		if err := s.env.Owner.MkdirAll(filepath.Dir(src.PasswordFile), 0o700); err != nil {
+			return err
+		}
+		if err := s.writeSecret(src.PasswordFile, []byte(password+"\n")); err != nil {
+			return err
+		}
 	}
 	if s.cfg.Notify.TelegramTokenFile != "" {
 		if err := s.writeSecret(s.cfg.Notify.TelegramTokenFile, []byte(s.telegramToken+"\n")); err != nil {
@@ -120,7 +144,24 @@ func (s *session) save() error {
 	if err := s.env.Owner.Apply(s.env.Paths.ConfigPath, 0o600); err != nil {
 		return err
 	}
+	s.removeOldPasswords()
 	return s.env.Owner.MkdirAll(s.env.Paths.StateDir, 0o750)
+}
+
+func (s *session) removeOldPasswords() {
+	for _, file := range s.removed {
+		if slices.ContainsFunc(s.cfg.Sources, func(src config.Source) bool { return src.PasswordFile == file }) {
+			continue
+		}
+		if err := os.Remove(file); err != nil && !errors.Is(err, os.ErrNotExist) {
+			s.env.UI.Warn(fmt.Sprintf("Cannot remove the old password file %s. Remove it manually.", file))
+			continue
+		}
+		if dir := filepath.Dir(file); dir != s.env.Paths.SecretsDir() {
+			_ = os.Remove(dir)
+		}
+	}
+	s.removed = nil
 }
 
 func (s *session) installSchedule(ctx context.Context) {
@@ -161,10 +202,11 @@ func (s *session) offerBackup(ctx context.Context, title string) error {
 
 func showRun(ui UI, record state.Run) {
 	for _, db := range record.Databases {
+		name := notify.DatabaseLabel(db)
 		if db.Status == state.StatusSuccess {
-			ui.Success(fmt.Sprintf("%s: %s in %s. File: %s", db.Name, app.HumanSize(db.SizeBytes), db.Duration.Round(time.Millisecond), db.RemotePath))
+			ui.Success(fmt.Sprintf("%s: %s in %s. File: %s", name, app.HumanSize(db.SizeBytes), db.Duration.Round(time.Millisecond), db.RemotePath))
 		} else {
-			ui.Error(fmt.Sprintf("%s: %s", db.Name, app.Sentence(db.Error)))
+			ui.Error(fmt.Sprintf("%s: %s", name, app.Sentence(db.Error)))
 		}
 	}
 }

@@ -14,7 +14,7 @@ import (
 )
 
 func newListCommand(opts *globalOptions) *cobra.Command {
-	var database string
+	var source, database string
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "Show the backups on the SFTP server.",
@@ -24,7 +24,7 @@ func newListCommand(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			databases, err := backup.SelectDatabases(cfg.Source.Databases, database)
+			targets, err := backup.SelectTargets(cfg, source, database)
 			if err != nil {
 				return app.Exit(app.ExitGeneral, err)
 			}
@@ -42,12 +42,14 @@ func newListCommand(opts *globalOptions) *cobra.Command {
 				loc = time.UTC
 			}
 			var all []backup.Entry
-			for _, db := range databases {
-				entries, err := backup.ListBackups(client, cfg.Destination.RemotePath, hostname, db)
-				if err != nil {
-					return app.Exit(app.ExitUploadFailed, err)
+			for _, target := range targets {
+				for _, db := range target.Databases {
+					entries, err := backup.ListBackups(client, cfg.Destination.RemotePath, hostname, target.Source.Name, db)
+					if err != nil {
+						return app.Exit(app.ExitUploadFailed, err)
+					}
+					all = append(all, entries...)
 				}
-				all = append(all, entries...)
 			}
 			out := cmd.OutOrStdout()
 			if len(all) == 0 {
@@ -55,13 +57,14 @@ func newListCommand(opts *globalOptions) *cobra.Command {
 				return nil
 			}
 			tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(tw, "DATABASE\tTIME\tSIZE\tFILE")
+			fmt.Fprintln(tw, "SOURCE\tDATABASE\tTIME\tSIZE\tFILE")
 			for _, e := range all {
-				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", e.Database, e.Time.In(loc).Format("2006-01-02 15:04 MST"), app.HumanSize(e.SizeBytes), e.Path)
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", e.Source, e.Database, e.Time.In(loc).Format("2006-01-02 15:04 MST"), app.HumanSize(e.SizeBytes), e.Path)
 			}
 			return tw.Flush()
 		},
 	}
-	cmd.Flags().StringVar(&database, "db", "", "Show only the backups of this database.")
+	cmd.Flags().StringVar(&source, "source", "", "Show only the backups of this source.")
+	cmd.Flags().StringVar(&database, "db", "", "Show only the backups of this database. If two sources have this database, add --source.")
 	return cmd
 }

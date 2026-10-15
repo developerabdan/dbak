@@ -29,6 +29,7 @@ type RunInfo struct {
 }
 
 type Database struct {
+	Source     string     `json:"source"`
 	Name       string     `json:"name"`
 	Status     string     `json:"status"`
 	LastRunAt  *time.Time `json:"last_run_at"`
@@ -52,7 +53,7 @@ func Build(cfg *config.Config, history *state.File, installed schedule.Installed
 		return Report{}, err
 	}
 	r := Report{
-		Databases: make([]Database, 0, len(cfg.Source.Databases)),
+		Databases: []Database{},
 		Schedule: Schedule{
 			Description: plan.Describe(),
 			Scheduler:   installed.Mode,
@@ -74,21 +75,28 @@ func Build(cfg *config.Config, history *state.File, installed schedule.Installed
 		r.Host = last.Host
 		r.LastRun = &RunInfo{Status: last.Status, StartedAt: last.StartedAt, FinishedAt: last.FinishedAt}
 	}
-	for _, name := range cfg.Source.Databases {
-		r.Databases = append(r.Databases, lastResult(history, name))
+	for _, source := range cfg.Sources {
+		for _, name := range source.Databases {
+			r.Databases = append(r.Databases, lastResult(history, source.Name, name))
+		}
 	}
 	return r, nil
 }
 
-func lastResult(history *state.File, name string) Database {
+func sameSource(recorded, source string) bool {
+	return recorded == source || (recorded == "" && source == config.LegacySourceName)
+}
+
+func lastResult(history *state.File, source, name string) Database {
 	for i := len(history.Runs) - 1; i >= 0; i-- {
 		run := history.Runs[i]
 		for _, db := range run.Databases {
-			if db.Name != name {
+			if db.Name != name || !sameSource(db.Source, source) {
 				continue
 			}
 			at := run.StartedAt
 			return Database{
+				Source:     source,
 				Name:       name,
 				Status:     db.Status,
 				LastRunAt:  &at,
@@ -99,7 +107,7 @@ func lastResult(history *state.File, name string) Database {
 			}
 		}
 	}
-	return Database{Name: name, Status: never}
+	return Database{Source: source, Name: name, Status: never}
 }
 
 func (r Report) WriteText(w io.Writer) error {
@@ -108,7 +116,7 @@ func (r Report) WriteText(w io.Writer) error {
 		loc = time.UTC
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "DATABASE\tSTATUS\tLAST RUN\tSIZE\tDURATION")
+	fmt.Fprintln(tw, "SOURCE\tDATABASE\tSTATUS\tLAST RUN\tSIZE\tDURATION")
 	for _, db := range r.Databases {
 		last, size, duration := never, "-", "-"
 		if db.LastRunAt != nil {
@@ -118,14 +126,14 @@ func (r Report) WriteText(w io.Writer) error {
 			size = app.HumanSize(db.SizeBytes)
 			duration = (time.Duration(db.DurationMS) * time.Millisecond).String()
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", db.Name, db.Status, last, size, duration)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", db.Source, db.Name, db.Status, last, size, duration)
 	}
 	if err := tw.Flush(); err != nil {
 		return err
 	}
 	for _, db := range r.Databases {
 		if db.Error != "" {
-			fmt.Fprintf(w, "\n%s: %s\n", db.Name, app.Sentence(db.Error))
+			fmt.Fprintf(w, "\n%s/%s: %s\n", db.Source, db.Name, app.Sentence(db.Error))
 		}
 	}
 	fmt.Fprintln(w)

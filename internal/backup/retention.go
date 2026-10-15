@@ -21,25 +21,28 @@ type Retention struct {
 	Store      DirStore
 	RemotePath string
 	Hostname   string
+	Source     string
 	Rules      retention.Rules
 	Location   *time.Location
 	Logger     *slog.Logger
 	Now        func() time.Time
 }
 
-func NewRetention(cfg *config.Config, store DirStore, hostname string, logger *slog.Logger) (*Retention, error) {
+func NewRetention(cfg *config.Config, source config.Source, store DirStore, hostname string, logger *slog.Logger) (*Retention, error) {
 	loc, err := time.LoadLocation(cfg.Schedule.Timezone)
 	if err != nil {
 		return nil, fmt.Errorf("the timezone %q is not known", cfg.Schedule.Timezone)
 	}
+	rules := cfg.RetentionFor(source)
 	return &Retention{
 		Store:      store,
 		RemotePath: cfg.Destination.RemotePath,
 		Hostname:   hostname,
+		Source:     source.Name,
 		Rules: retention.Rules{
-			Daily:     cfg.Retention.Daily,
-			Weekly:    cfg.Retention.Weekly,
-			Monthly:   cfg.Retention.Monthly,
+			Daily:     rules.Daily,
+			Weekly:    rules.Weekly,
+			Monthly:   rules.Monthly,
 			KeepToday: cfg.Schedule.Frequency == config.FrequencyEveryNHours,
 		},
 		Location: loc,
@@ -64,7 +67,7 @@ func (r *Retention) Apply(results []Result) {
 }
 
 func (r *Retention) applyOne(database string) (int, error) {
-	dir := RemoteDir(r.RemotePath, r.Hostname, database)
+	dir := RemoteDir(r.RemotePath, r.Hostname, r.Source, database)
 	entries, err := r.Store.ReadDir(dir)
 	if err != nil {
 		return 0, err

@@ -1,6 +1,11 @@
 package config
 
-const CurrentVersion = 1
+const (
+	CurrentVersion = 2
+	LegacyVersion  = 1
+)
+
+const LegacySourceName = "default"
 
 const (
 	EnginePostgres = "postgres"
@@ -21,7 +26,7 @@ const (
 
 type Config struct {
 	Version     int         `yaml:"version"`
-	Source      Source      `yaml:"source"`
+	Sources     []Source    `yaml:"sources"`
 	Destination Destination `yaml:"destination"`
 	Schedule    Schedule    `yaml:"schedule"`
 	Retention   Retention   `yaml:"retention"`
@@ -29,13 +34,16 @@ type Config struct {
 }
 
 type Source struct {
-	Engine       string   `yaml:"engine"`
-	Host         string   `yaml:"host"`
-	Port         int      `yaml:"port"`
-	Username     string   `yaml:"username"`
-	PasswordFile string   `yaml:"password_file"`
-	SSLMode      string   `yaml:"ssl_mode"`
-	Databases    []string `yaml:"databases"`
+	Name         string     `yaml:"name"`
+	Engine       string     `yaml:"engine"`
+	Host         string     `yaml:"host"`
+	Port         int        `yaml:"port"`
+	Username     string     `yaml:"username"`
+	PasswordFile string     `yaml:"password_file"`
+	SSLMode      string     `yaml:"ssl_mode"`
+	BinDir       string     `yaml:"bin_dir,omitempty"`
+	Databases    []string   `yaml:"databases"`
+	Retention    *Retention `yaml:"retention,omitempty"`
 }
 
 type Destination struct {
@@ -91,17 +99,39 @@ func DefaultSSLMode(engine string) string {
 	return ""
 }
 
-func (c *Config) applyDefaults() {
-	if c.Source.Port == 0 {
-		c.Source.Port = DefaultPort(c.Source.Engine)
+func (c *Config) SourceByName(name string) (*Source, bool) {
+	for i := range c.Sources {
+		if c.Sources[i].Name == name {
+			return &c.Sources[i], true
+		}
 	}
-	if c.Source.SSLMode == "" {
-		c.Source.SSLMode = DefaultSSLMode(c.Source.Engine)
+	return nil, false
+}
+
+func (c *Config) RetentionFor(s Source) Retention {
+	if s.Retention != nil {
+		return *s.Retention
+	}
+	return c.Retention
+}
+
+func (c *Config) applyDefaults() {
+	for i := range c.Sources {
+		c.Sources[i].applyDefaults()
 	}
 	if c.Destination.Port == 0 {
 		c.Destination.Port = 22
 	}
 	if c.Notify.When == "" {
 		c.Notify.When = NotifyFailure
+	}
+}
+
+func (s *Source) applyDefaults() {
+	if s.Port == 0 {
+		s.Port = DefaultPort(s.Engine)
+	}
+	if s.SSLMode == "" {
+		s.SSLMode = DefaultSSLMode(s.Engine)
 	}
 }

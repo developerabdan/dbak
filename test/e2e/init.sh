@@ -26,7 +26,7 @@ fi
 
 (cd "$root" && CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -o "$work/dbak" ./cmd/dbak)
 
-printf '%s\n' '' '' postgres16 '' '' 'Te:st\pa"ss#1' 2 '' sftp '' dbak /upload 2 /tmp/id_ed25519 y \
+printf '%s\n' '' '' '' postgres16 '' '' 'Te:st\pa"ss#1' 2 '' '' sftp '' dbak /upload 2 /tmp/id_ed25519 y \
 	'' '' Asia/Jakarta '' '' '' '' '' '' '' '' '' '' >"$work/answers.txt"
 
 docker create -i --name "$container" --hostname vm-e2e-01 --network dbaktest_default \
@@ -36,14 +36,16 @@ docker cp "$root/testdata/integration/ssh/id_ed25519" "$container:/tmp/id_ed2551
 docker start -ai "$container" <"$work/answers.txt" | tee "$work/init.log"
 
 grep -q "OK: dbak saved the config in /etc/dbak/config.yaml." "$work/init.log"
-grep -q "OK: app_prod: " "$work/init.log"
+grep -q "OK: postgres/app_prod: " "$work/init.log"
 grep -q "no schedule is installed. Correct the problem, then run: sudo dbak schedule" "$work/init.log"
 
 docker commit "$container" "$image" >/dev/null
 docker run --rm --network dbaktest_default --entrypoint sh "$image" -c '
 	set -e
 	test "$(stat -c %U:%a /etc/dbak/secrets)" = dbak:700
-	test "$(stat -c %U:%a /etc/dbak/secrets/db_password)" = dbak:600
+	test "$(stat -c %U:%a /etc/dbak/secrets/postgres)" = dbak:700
+	test "$(stat -c %U:%a /etc/dbak/secrets/postgres/db_password)" = dbak:600
+	grep -q "name: postgres" /etc/dbak/config.yaml
 	test "$(stat -c %U:%a /etc/dbak/config.yaml)" = dbak:600
 	gosu dbak /usr/local/bin/dbak run
 '

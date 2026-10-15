@@ -14,7 +14,10 @@ import (
 
 func testConfig() *config.Config {
 	return &config.Config{
-		Source:   config.Source{Databases: []string{"app_prod", "app_audit", "app_new"}},
+		Sources: []config.Source{
+			{Name: config.LegacySourceName, Databases: []string{"app_prod", "app_audit", "app_new"}},
+			{Name: "shop_mysql", Databases: []string{"app_prod"}},
+		},
 		Schedule: config.Schedule{Frequency: config.FrequencyDaily, Time: "02:00", Timezone: "Asia/Jakarta"},
 	}
 }
@@ -34,6 +37,7 @@ func testHistory() *state.File {
 			StartedAt: time.Date(2026, 10, 14, 19, 0, 0, 0, time.UTC), FinishedAt: time.Date(2026, 10, 14, 19, 0, 5, 0, time.UTC),
 			Databases: []state.Database{
 				{Name: "app_prod", Status: state.StatusFailure, Error: "pg_dump: permission denied for table audit_log"},
+				{Source: "shop_mysql", Name: "app_prod", Status: state.StatusSuccess, SizeBytes: 4096, Duration: time.Second},
 			},
 		},
 	}}
@@ -49,7 +53,13 @@ func TestBuild(t *testing.T) {
 	if r.LastRun == nil || r.LastRun.Status != state.StatusFailure || r.Host != "vm-app-01" {
 		t.Fatalf("got last run %+v", r.LastRun)
 	}
-	prod, audit, fresh := r.Databases[0], r.Databases[1], r.Databases[2]
+	if len(r.Databases) != 4 {
+		t.Fatalf("got %d databases, want 4", len(r.Databases))
+	}
+	prod, audit, fresh, shop := r.Databases[0], r.Databases[1], r.Databases[2], r.Databases[3]
+	if shop.Source != "shop_mysql" || shop.Status != state.StatusSuccess || shop.SizeBytes != 4096 {
+		t.Fatalf("got shop_mysql/app_prod %+v", shop)
+	}
 	if prod.Status != state.StatusFailure || prod.Error == "" || !prod.LastRunAt.Equal(time.Date(2026, 10, 14, 19, 0, 0, 0, time.UTC)) {
 		t.Fatalf("got app_prod %+v", prod)
 	}
@@ -74,11 +84,12 @@ func TestWriteText(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"DATABASE   STATUS   LAST RUN              SIZE     DURATION",
-		"app_prod   failure  2026-10-15 02:00 WIB  -        -",
-		"app_audit  success  2026-10-14 02:00 WIB  2.0 KiB  2s",
-		"app_new    never    never                 -        -",
-		"app_prod: pg_dump: permission denied for table audit_log.",
+		"SOURCE      DATABASE   STATUS   LAST RUN              SIZE     DURATION",
+		"default     app_prod   failure  2026-10-15 02:00 WIB  -        -",
+		"default     app_audit  success  2026-10-14 02:00 WIB  2.0 KiB  2s",
+		"default     app_new    never    never                 -        -",
+		"shop_mysql  app_prod   success  2026-10-15 02:00 WIB  4.0 KiB  1s",
+		"default/app_prod: pg_dump: permission denied for table audit_log.",
 		"Last run:     2026-10-15 02:00 WIB, failure",
 		"Schedule:     daily at 02:00 Asia/Jakarta",
 		"Next backup:  2026-10-16 02:00 WIB (systemd)",
@@ -120,7 +131,8 @@ func TestJSON(t *testing.T) {
 	}
 	for _, want := range []string{
 		`"last_run":{"status":"failure","started_at":"2026-10-14T19:00:00Z"`,
-		`{"name":"app_new","status":"never","last_run_at":null}`,
+		`{"source":"default","name":"app_new","status":"never","last_run_at":null}`,
+		`{"source":"shop_mysql","name":"app_prod","status":"success"`,
 		`"next_run":"2026-10-16T02:00:00+07:00"`,
 		`"scheduler":"cron","active":true`,
 	} {

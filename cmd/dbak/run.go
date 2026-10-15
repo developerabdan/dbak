@@ -12,7 +12,7 @@ import (
 )
 
 func newRunCommand(opts *globalOptions) *cobra.Command {
-	var database string
+	var source, database string
 	cmd := &cobra.Command{
 		Use:   "run",
 		Short: "Make a backup of the databases now and upload it to the SFTP server.",
@@ -24,12 +24,14 @@ func newRunCommand(opts *globalOptions) *cobra.Command {
 			_, err := backup.RunJob(ctx, backup.JobOptions{
 				ConfigPath: opts.configPath,
 				StateDir:   opts.stateDir,
+				Source:     source,
 				Database:   database,
 				Logger:     logger,
 			})
 			return err
 		},
 	}
-	cmd.Flags().StringVar(&database, "db", "", "Make a backup of only this database. The database must be in the config.")
+	cmd.Flags().StringVar(&source, "source", "", "Make a backup of only the databases of this source. The source must be in the config.")
+	cmd.Flags().StringVar(&database, "db", "", "Make a backup of only this database. If two sources have this database, add --source.")
 	return cmd
 }

@@ -9,9 +9,9 @@ import (
 	"strings"
 
 	"github.com/developerabdan/dbak/internal/app"
+	"github.com/developerabdan/dbak/internal/backup"
 	"github.com/developerabdan/dbak/internal/config"
 	"github.com/developerabdan/dbak/internal/engine"
-	"github.com/developerabdan/dbak/internal/engine/mysql"
 	"github.com/developerabdan/dbak/internal/engine/postgres"
 	"github.com/developerabdan/dbak/internal/system"
 )
@@ -23,8 +23,13 @@ var (
 
 func (s *session) configureSource(ctx context.Context) error {
 	ui := s.env.UI
-	ui.Heading("Database source")
-	current := s.cfg.Source.Engine
+	src := s.src()
+	if src.Name == "" {
+		ui.Heading("Database source")
+	} else {
+		ui.Heading("Database source " + src.Name)
+	}
+	current := src.Engine
 	if current == "" {
 		current = config.EnginePostgres
 	}
@@ -32,10 +37,13 @@ func (s *session) configureSource(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if engineName != s.cfg.Source.Engine {
-		s.cfg.Source.Engine = engineName
-		s.cfg.Source.Port = config.DefaultPort(engineName)
-		s.cfg.Source.SSLMode = config.DefaultSSLMode(engineName)
+	if engineName != src.Engine {
+		src.Engine = engineName
+		src.Port = config.DefaultPort(engineName)
+		src.SSLMode = config.DefaultSSLMode(engineName)
+	}
+	if err := s.askSourceName(); err != nil {
+		return err
 	}
 	if err := s.ensureClientTool(ctx); err != nil {
 		return err
@@ -52,21 +60,18 @@ func (s *session) configureSource(ctx context.Context) error {
 	return s.dumpCheck(ctx)
 }
 
-func clientTool(engineName string) string {
-	if engineName == config.EngineMySQL {
-		return mysql.DefaultBinary
-	}
-	return postgres.DefaultBinary
-}
-
 func (s *session) ensureClientTool(ctx context.Context) error {
 	ui := s.env.UI
-	tool := clientTool(s.cfg.Source.Engine)
+	src := s.src()
+	tool := backup.ClientTool(*src)
 	if _, err := s.env.LookPath(tool); err == nil {
 		return nil
 	}
+	if src.BinDir != "" {
+		return fmt.Errorf("the client tool %s does not exist. Correct bin_dir of the source %s in %s", tool, src.Name, s.env.Paths.ConfigPath)
+	}
 	ui.Warn(fmt.Sprintf("The client tool %s is not installed.", tool))
-	pkg := system.ClientPackage(s.env.OSFamily, s.cfg.Source.Engine)
+	pkg := system.ClientPackage(s.env.OSFamily, src.Engine)
 	commands := system.InstallCommands(s.env.OSFamily, pkg)
 	if len(commands) == 0 {
 		return fmt.Errorf("the client tool %s is not installed. Install it with the package manager of this system, then run dbak init again", tool)
@@ -102,18 +107,18 @@ func (s *session) userBranch() error {
 	if err != nil || choice == "yes" {
 		return err
 	}
-	result, err := RunUserHelper(s.env.UI, s.cfg.Source.Engine, s.env.PrimaryIP)
+	result, err := RunUserHelper(s.env.UI, s.src().Engine, s.env.PrimaryIP)
 	if err != nil {
 		return err
 	}
-	s.cfg.Source.Username = result.User
-	s.password = result.Password
+	s.src().Username = result.User
+	s.setPassword(result.Password)
 	return nil
 }
 
 func (s *session) askCredentials() error {
 	ui := s.env.UI
-	src := &s.cfg.Source
+	src := s.src()
 	var err error
 	if src.Host, err = ui.Input("Database host", "Type the IP address or the host name of the database server.", src.Host, required); err != nil {
 		return err
@@ -128,7 +133,7 @@ func (s *session) askCredentials() error {
 	}
 	description := "dbak keeps the password in " + src.PasswordFile + " with mode 0600."
 	validate := required
-	if s.password != "" {
+	if s.password() != "" {
 		description = "Leave the field empty to keep the current password."
 		validate = nil
 	}
@@ -137,7 +142,7 @@ func (s *session) askCredentials() error {
 		return err
 	}
 	if password != "" {
-		s.password = password
+		s.setPassword(password)
 	}
 	modes := postgresSSLModes
 	if src.Engine == config.EngineMySQL {
@@ -153,7 +158,7 @@ func (s *session) connect(ctx context.Context) error {
 		if err := s.askCredentials(); err != nil {
 			return err
 		}
-		eng, err := s.env.NewEngine(s.cfg.Source, s.password)
+		eng, err := s.env.NewEngine(*s.src(), s.password())
 		if err != nil {
 			return err
 		}
@@ -189,7 +194,7 @@ func (s *session) checkClient(ctx context.Context, eng engine.Full, info engine.
 	if err != nil {
 		return err
 	}
-	if s.cfg.Source.Engine == config.EnginePostgres {
+	if s.src().Engine == config.EnginePostgres {
 		var tooOld *engine.ClientTooOldError
 		if err := postgres.CheckClient(client, info); errors.As(err, &tooOld) {
 			ui.Error(app.Sentence(err.Error()))
@@ -213,10 +218,10 @@ func (s *session) chooseDatabases(ctx context.Context) error {
 	if len(all) == 0 {
 		return errors.New("the user cannot see a database on the server. Grant access to a database, then run dbak init again")
 	}
-	selected := intersect(s.cfg.Source.Databases, all)
+	selected := intersect(s.src().Databases, all)
 	if len(selected) == 0 {
 		for _, db := range all {
-			if !(s.cfg.Source.Engine == config.EnginePostgres && db == "postgres") {
+			if !(s.src().Engine == config.EnginePostgres && db == "postgres") {
 				selected = append(selected, db)
 			}
 		}
@@ -235,7 +240,7 @@ func (s *session) chooseDatabases(ctx context.Context) error {
 	if len(invalid) > 0 {
 		return fmt.Errorf("dbak cannot make a backup of a database with the name %q. Use only databases with letters, digits, and underscores in the name", invalid[0])
 	}
-	s.cfg.Source.Databases = chosen
+	s.src().Databases = chosen
 	return nil
 }
 
@@ -254,7 +259,7 @@ func (s *session) dumpCheck(ctx context.Context) error {
 	ui.Heading("Dump check")
 	for {
 		problems := 0
-		for _, db := range s.cfg.Source.Databases {
+		for _, db := range s.src().Databases {
 			if !s.checkDatabase(ctx, db) {
 				problems++
 			}

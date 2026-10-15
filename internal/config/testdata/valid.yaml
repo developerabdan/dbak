@@ -1,14 +1,29 @@
-version: 1
-source:
-  engine: postgres
-  host: 10.0.0.10
-  port: 5432
-  username: backup_ro
-  password_file: /etc/dbak/secrets/db_password
-  ssl_mode: prefer
-  databases:
-    - app_prod
-    - app_audit
+version: 2
+sources:
+  - name: main_pg
+    engine: postgres
+    host: 10.0.0.10
+    port: 5432
+    username: backup_ro
+    password_file: /etc/dbak/secrets/main_pg/db_password
+    ssl_mode: prefer
+    bin_dir: /usr/lib/postgresql/16/bin
+    databases:
+      - app_prod
+      - app_audit
+  - name: shop_mysql
+    engine: mysql
+    host: 10.0.0.11
+    port: 3306
+    username: backup_ro
+    password_file: /etc/dbak/secrets/shop_mysql/db_password
+    ssl_mode: preferred
+    databases:
+      - shop
+    retention:
+      daily: 14
+      weekly: 0
+      monthly: 0
 destination:
   type: sftp
   host: backup.example.com

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"slices"
 	"strconv"
 	"time"
 
@@ -100,7 +101,55 @@ func (s *session) configureRetention() error {
 	ui := s.env.UI
 	ui.Heading("Retention")
 	ui.Info("dbak keeps the newest backup of each day, week, and month. It never removes the newest backup.")
-	r := &s.cfg.Retention
+	if err := askRetention(ui, &s.cfg.Retention); err != nil {
+		return err
+	}
+	return s.configureSourceRetention()
+}
+
+func (s *session) configureSourceRetention() error {
+	ui := s.env.UI
+	custom := slices.ContainsFunc(s.cfg.Sources, func(src config.Source) bool { return src.Retention != nil })
+	if len(s.cfg.Sources) < 2 && !custom {
+		return nil
+	}
+	different, err := ui.Confirm("Use a different retention for one or more database sources?",
+		"The other sources use the retention above.", custom)
+	if err != nil {
+		return err
+	}
+	for i := range s.cfg.Sources {
+		src := &s.cfg.Sources[i]
+		if !different {
+			src.Retention = nil
+			continue
+		}
+		current := "global"
+		if src.Retention != nil {
+			current = "custom"
+		}
+		choice, err := ui.Select("Retention for the source "+src.Name, "",
+			options("Use the retention above", "global", "Use a different retention", "custom"), current)
+		if err != nil {
+			return err
+		}
+		if choice == "global" {
+			src.Retention = nil
+			continue
+		}
+		rules := s.cfg.Retention
+		if src.Retention != nil {
+			rules = *src.Retention
+		}
+		if err := askRetention(ui, &rules); err != nil {
+			return err
+		}
+		src.Retention = &rules
+	}
+	return nil
+}
+
+func askRetention(ui UI, r *config.Retention) error {
 	for {
 		var err error
 		if r.Daily, err = askCount(ui, "Daily backups to keep", r.Daily); err != nil {

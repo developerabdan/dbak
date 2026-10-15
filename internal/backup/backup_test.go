@@ -99,6 +99,7 @@ func newRunner(e engine.Engine, s Store) *Runner {
 		Store:      s,
 		RemotePath: "/backups",
 		Hostname:   "vm-app-01",
+		Source:     "main_pg",
 		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Now:        func() time.Time { return at },
 	}
@@ -106,8 +107,8 @@ func newRunner(e engine.Engine, s Store) *Runner {
 
 func TestFileNaming(t *testing.T) {
 	at := time.Date(2026, 10, 16, 2, 0, 0, 0, time.FixedZone("WIB", 7*3600))
-	got := RemoteFile("/backups", "vm-app-01", "app_prod", at, "dump")
-	if want := "/backups/vm-app-01/app_prod/app_prod_20261015T190000Z.dump"; got != want {
+	got := RemoteFile("/backups", "vm-app-01", "main_pg", "app_prod", at, "dump")
+	if want := "/backups/vm-app-01/main_pg/app_prod/app_prod_20261015T190000Z.dump"; got != want {
 		t.Fatalf("got %s, want %s", got, want)
 	}
 	if got := FileName("app_prod", at, "sql.zst"); got != "app_prod_20261015T190000Z.sql.zst" {
@@ -119,8 +120,8 @@ func TestSuccessfulBackup(t *testing.T) {
 	e := &fakeEngine{scripts: map[string]string{"app_prod": "printf 'dump data'"}}
 	s := newFakeStore()
 	results := newRunner(e, s).Run(context.Background(), []string{"app_prod"})
-	final := "/backups/vm-app-01/app_prod/app_prod_20261015T190000Z.dump"
-	if results[0].Status != state.StatusSuccess || results[0].RemotePath != final || results[0].SizeBytes != 9 {
+	final := "/backups/vm-app-01/main_pg/app_prod/app_prod_20261015T190000Z.dump"
+	if results[0].Status != state.StatusSuccess || results[0].Source != "main_pg" || results[0].RemotePath != final || results[0].SizeBytes != 9 {
 		t.Fatalf("unexpected result: %+v", results[0])
 	}
 	if got := s.files[final]; got == nil || got.String() != "dump data" {
@@ -129,7 +130,7 @@ func TestSuccessfulBackup(t *testing.T) {
 	if _, ok := s.files[final+PartialSuffix]; ok {
 		t.Fatal("the partial file exists after success")
 	}
-	if s.dirs[0] != "/backups/vm-app-01/app_prod" {
+	if s.dirs[0] != "/backups/vm-app-01/main_pg/app_prod" {
 		t.Fatalf("got directory %s", s.dirs[0])
 	}
 	if e.cleanups != 1 {
@@ -221,6 +222,8 @@ func TestExitCode(t *testing.T) {
 	ok := Result{Database: state.Database{Status: state.StatusSuccess}}
 	dump := Result{Database: state.Database{Status: state.StatusFailure}, FailureKind: FailureDump}
 	upload := Result{Database: state.Database{Status: state.StatusFailure}, FailureKind: FailureUpload}
+	connect := Result{Database: state.Database{Status: state.StatusFailure}, FailureKind: FailureConnect}
+	badConfig := Result{Database: state.Database{Status: state.StatusFailure}, FailureKind: FailureConfig}
 	cases := []struct {
 		name    string
 		results []Result
@@ -231,6 +234,11 @@ func TestExitCode(t *testing.T) {
 		{"all dumps fail", []Result{dump, dump}, app.ExitDumpFailed},
 		{"all uploads fail", []Result{upload, upload}, app.ExitUploadFailed},
 		{"mixed failures", []Result{upload, dump}, app.ExitDumpFailed},
+		{"all connections fail", []Result{connect, connect}, app.ExitDatabase},
+		{"one source fails to connect", []Result{ok, connect}, app.ExitPartial},
+		{"all password files are bad", []Result{badConfig}, app.ExitConfigInvalid},
+		{"connection and dump failures", []Result{connect, dump}, app.ExitDumpFailed},
+		{"no results", nil, app.ExitDumpFailed},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
