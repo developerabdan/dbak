@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/developerabdan/dbak/internal/config"
+	"github.com/developerabdan/dbak/internal/encrypt"
 	"github.com/developerabdan/dbak/internal/engine"
 	"github.com/developerabdan/dbak/internal/schedule"
 	"github.com/developerabdan/dbak/internal/sftp"
@@ -159,7 +160,7 @@ func find(t *testing.T, results []Result, name string) Result {
 func TestAllChecksPass(t *testing.T) {
 	f := newFixture(t)
 	results := Run(context.Background(), f.env)
-	want := "Config=OK Permissions=OK Client tool main_pg=OK Database main_pg=OK Dump check main_pg/app_prod=OK Dump check main_pg/app_audit=OK SFTP=OK Schedule=OK Clock=OK"
+	want := "Config=OK Permissions=OK Client tool main_pg=OK Database main_pg=OK Dump check main_pg/app_prod=OK Dump check main_pg/app_audit=OK SFTP=OK Encryption=WARN Schedule=OK Clock=OK"
 	if got := levels(results); got != want {
 		t.Fatalf("got %s\nwant %s", got, want)
 	}
@@ -232,7 +233,7 @@ func TestDatabaseFailureSkipsDumpChecks(t *testing.T) {
 	f := newFixture(t)
 	f.eng.probeErr = &engine.ConnectError{Message: "cannot connect to PostgreSQL at 10.0.0.10:5432"}
 	results := Run(context.Background(), f.env)
-	want := "Config=OK Permissions=OK Client tool main_pg=OK Database main_pg=FAIL SFTP=OK Schedule=OK Clock=OK"
+	want := "Config=OK Permissions=OK Client tool main_pg=OK Database main_pg=FAIL SFTP=OK Encryption=WARN Schedule=OK Clock=OK"
 	if got := levels(results); got != want {
 		t.Fatalf("got %s\nwant %s", got, want)
 	}
@@ -350,7 +351,7 @@ func TestEachSourceIsExamined(t *testing.T) {
 	}}
 	results := Run(context.Background(), f.env)
 	want := "Config=OK Permissions=OK Client tool main_pg=OK Database main_pg=OK Dump check main_pg/app_prod=OK Dump check main_pg/app_audit=OK " +
-		"Client tool shop_mysql=OK Database shop_mysql=FAIL SFTP=OK Schedule=OK Clock=OK"
+		"Client tool shop_mysql=OK Database shop_mysql=FAIL SFTP=OK Encryption=WARN Schedule=OK Clock=OK"
 	if got := levels(results); got != want {
 		t.Fatalf("got %s\nwant %s", got, want)
 	}
@@ -359,6 +360,30 @@ func TestEachSourceIsExamined(t *testing.T) {
 	}
 	r := find(t, Run(context.Background(), f.env), "Permissions")
 	if r.Level != Fail || r.Fix != "Run: sudo chmod 0700 "+dir {
+		t.Fatalf("got %+v", r)
+	}
+}
+
+func TestEncryptionCheck(t *testing.T) {
+	f := newFixture(t)
+	r := find(t, Run(context.Background(), f.env), "Encryption")
+	if r.Level != Warn || !strings.Contains(r.Fix, "Backup encryption") {
+		t.Fatalf("got %+v", r)
+	}
+	cfg, err := config.Load(f.env.ConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := encrypt.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Encryption.Recipients = []string{key.Public}
+	if err := config.Save(f.env.ConfigPath, cfg); err != nil {
+		t.Fatal(err)
+	}
+	r = find(t, Run(context.Background(), f.env), "Encryption")
+	if r.Level != OK || r.Message != "The backups are encrypted for 1 public key." {
 		t.Fatalf("got %+v", r)
 	}
 }

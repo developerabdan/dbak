@@ -13,6 +13,7 @@ import (
 	"github.com/developerabdan/dbak/internal/app"
 	"github.com/developerabdan/dbak/internal/backup"
 	"github.com/developerabdan/dbak/internal/config"
+	"github.com/developerabdan/dbak/internal/encrypt"
 	"github.com/developerabdan/dbak/internal/engine"
 	"github.com/developerabdan/dbak/internal/engine/postgres"
 	"github.com/developerabdan/dbak/internal/schedule"
@@ -70,6 +71,7 @@ func Run(ctx context.Context, env *Env) []Result {
 		}
 	}
 	d.checkSFTP()
+	d.checkEncryption()
 	d.checkSchedule(ctx)
 	d.checkClock(ctx)
 	return d.results
@@ -264,6 +266,24 @@ func (d *doctor) checkSFTP() {
 		return
 	}
 	d.add("SFTP", OK, fmt.Sprintf("dbak can write to %s on %s.", dir, d.cfg.Destination.Host), "")
+}
+
+func (d *doctor) checkEncryption() {
+	recipients := d.cfg.Encryption.Recipients
+	if len(recipients) == 0 {
+		d.add("Encryption", Warn, "The backups are not encrypted. A person with access to the SFTP server can read them.",
+			"Run: sudo dbak init, then select Backup encryption.")
+		return
+	}
+	if _, err := encrypt.ParseRecipients(recipients); err != nil {
+		d.add("Encryption", Fail, app.Sentence(err.Error()), "Correct encryption.recipients in the config.")
+		return
+	}
+	noun := "public keys"
+	if len(recipients) == 1 {
+		noun = "public key"
+	}
+	d.add("Encryption", OK, fmt.Sprintf("The backups are encrypted for %d %s.", len(recipients), noun), "")
 }
 
 func (d *doctor) checkSchedule(ctx context.Context) {

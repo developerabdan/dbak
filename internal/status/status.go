@@ -16,10 +16,16 @@ import (
 const never = "never"
 
 type Report struct {
-	Host      string     `json:"host,omitempty"`
-	LastRun   *RunInfo   `json:"last_run"`
-	Databases []Database `json:"databases"`
-	Schedule  Schedule   `json:"schedule"`
+	Host       string     `json:"host,omitempty"`
+	LastRun    *RunInfo   `json:"last_run"`
+	Databases  []Database `json:"databases"`
+	Schedule   Schedule   `json:"schedule"`
+	Encryption Encryption `json:"encryption"`
+}
+
+type Encryption struct {
+	Enabled    bool `json:"enabled"`
+	PublicKeys int  `json:"public_keys"`
 }
 
 type RunInfo struct {
@@ -58,6 +64,10 @@ func Build(cfg *config.Config, history *state.File, installed schedule.Installed
 			Description: plan.Describe(),
 			Scheduler:   installed.Mode,
 			Timezone:    cfg.Schedule.Timezone,
+		},
+		Encryption: Encryption{
+			Enabled:    cfg.Encryption.Enabled(),
+			PublicKeys: len(cfg.Encryption.Recipients),
 		},
 	}
 	switch installed.Mode {
@@ -143,6 +153,7 @@ func (r Report) WriteText(w io.Writer) error {
 		fmt.Fprintln(w, "Last run:     never. To make a backup now, run: sudo -u dbak dbak run")
 	}
 	fmt.Fprintf(w, "Schedule:     %s\n", r.Schedule.Description)
+	fmt.Fprintf(w, "Encryption:   %s\n", r.Encryption.text())
 	switch {
 	case r.Schedule.Scheduler == "":
 		fmt.Fprintln(w, "Next backup:  none. No schedule is installed. Run: sudo dbak schedule")
@@ -152,6 +163,16 @@ func (r Report) WriteText(w io.Writer) error {
 		fmt.Fprintf(w, "Next backup:  %s (%s)\n", formatTime(r.Schedule.NextRun.In(loc)), r.Schedule.Scheduler)
 	}
 	return nil
+}
+
+func (e Encryption) text() string {
+	switch {
+	case !e.Enabled:
+		return "off. To turn it on, run: sudo dbak init"
+	case e.PublicKeys == 1:
+		return "on, 1 public key"
+	}
+	return fmt.Sprintf("on, %d public keys", e.PublicKeys)
 }
 
 func formatTime(t time.Time) string {

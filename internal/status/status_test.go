@@ -92,6 +92,7 @@ func TestWriteText(t *testing.T) {
 		"default/app_prod: pg_dump: permission denied for table audit_log.",
 		"Last run:     2026-10-15 02:00 WIB, failure",
 		"Schedule:     daily at 02:00 Asia/Jakarta",
+		"Encryption:   off. To turn it on, run: sudo dbak init",
 		"Next backup:  2026-10-16 02:00 WIB (systemd)",
 	} {
 		if !strings.Contains(out.String(), want) {
@@ -135,9 +136,23 @@ func TestJSON(t *testing.T) {
 		`{"source":"shop_mysql","name":"app_prod","status":"success"`,
 		`"next_run":"2026-10-16T02:00:00+07:00"`,
 		`"scheduler":"cron","active":true`,
+		`"encryption":{"enabled":false,"public_keys":0}`,
 	} {
 		if !strings.Contains(string(data), want) {
 			t.Errorf("the JSON does not contain %s:\n%s", want, data)
+		}
+	}
+}
+
+func TestEncryptionText(t *testing.T) {
+	cases := map[string]Encryption{
+		"off. To turn it on, run: sudo dbak init": {},
+		"on, 1 public key":                        {Enabled: true, PublicKeys: 1},
+		"on, 2 public keys":                       {Enabled: true, PublicKeys: 2},
+	}
+	for want, e := range cases {
+		if got := e.text(); got != want {
+			t.Errorf("got %q, want %q", got, want)
 		}
 	}
 }
