@@ -192,7 +192,7 @@ func mariaSSLOptions(mode string) []string {
 }
 
 func quoteOption(value string) string {
-	replacer := strings.NewReplacer(`\`, `\\`, "\n", `\n`, "\r", `\r`, "\t", `\t`)
+	replacer := strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`, "\r", `\r`, "\t", `\t`)
 	return `"` + replacer.Replace(value) + `"`
 }
 

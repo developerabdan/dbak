@@ -63,7 +63,7 @@ func TestDumpArgs(t *testing.T) {
 
 func TestOptionFileForMySQLClient(t *testing.T) {
 	got := testEngine(t).optionFile(false)
-	want := "[client]\nhost=\"10.0.0.10\"\nport=3306\nuser=\"backup_ro\"\npassword=\"p\"a\\\\ss#word\"\nssl-mode=PREFERRED\n"
+	want := "[client]\nhost=\"10.0.0.10\"\nport=3306\nuser=\"backup_ro\"\npassword=\"p\\\"a\\\\ss#word\"\nssl-mode=PREFERRED\n"
 	if got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}
