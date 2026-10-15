@@ -34,17 +34,22 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+      - name: install the PostgreSQL 18 client tools
+        run: |
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y postgresql-client-18
       - name: start the test containers
         run: docker compose -f docker-compose.test.yml -p dbaktest up -d
       - name: integration tests
         env:
-          DBAK_IT_PG_BIN: /usr/lib/postgresql/16/bin
+          DBAK_IT_PG_BIN: /usr/lib/postgresql/18/bin
         run: go test -tags integration -count=1 ./internal/engine/ ./internal/backup/
       - name: end-to-end tests
         run: |
           ./test/e2e/init.sh
           ./test/e2e/schedule.sh
           ./test/e2e/install.sh
+          ./test/e2e/restore.sh
       - name: stop the test containers
         if: always()
         run: docker compose -f docker-compose.test.yml -p dbaktest down -v

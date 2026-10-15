@@ -13,6 +13,9 @@ func TestParseClientVersion(t *testing.T) {
 	cases := map[string]int{
 		"pg_dump (PostgreSQL) 16.2 (Ubuntu 16.2-1.pgdg22.04+1)": 16,
 		"pg_dump (PostgreSQL) 17.0 (DBngin.app)":                17,
+		"pg_dump (PostgreSQL) 17.6 (Debian 17.6-0+deb13u1)":     17,
+		"pg_dump (PostgreSQL) 18.4":                             18,
+		"pg_dump (PostgreSQL) 18beta1":                          18,
 		"pg_dump (PostgreSQL) 9.6.24":                           9,
 	}
 	for text, want := range cases {
@@ -68,3 +71,22 @@ func TestSchemaCheckCommandArgs(t *testing.T) {
 }
 
 var _ engine.Full = (*Postgres)(nil)
+
+func TestCheckClientForNewServers(t *testing.T) {
+	cases := []struct {
+		client, server int
+		ok             bool
+	}{
+		{17, 17, true},
+		{18, 17, true},
+		{18, 18, true},
+		{16, 17, false},
+		{17, 18, false},
+	}
+	for _, c := range cases {
+		err := CheckClient(engine.ClientInfo{Major: c.client}, engine.ServerInfo{Flavor: engine.FlavorPostgres, Major: c.server})
+		if (err == nil) != c.ok {
+			t.Errorf("pg_dump %d with server %d: got %v", c.client, c.server, err)
+		}
+	}
+}

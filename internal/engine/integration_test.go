@@ -36,10 +36,23 @@ type server struct {
 }
 
 var servers = []server{
+	{"postgres 18", config.EnginePostgres, 55418, "DBAK_IT_PG_BIN", sqlhelper.Postgres14},
+	{"postgres 17", config.EnginePostgres, 55417, "DBAK_IT_PG_BIN", sqlhelper.Postgres14},
 	{"postgres 16", config.EnginePostgres, 55416, "DBAK_IT_PG_BIN", sqlhelper.Postgres14},
 	{"postgres 13", config.EnginePostgres, 55413, "DBAK_IT_PG_BIN", sqlhelper.Postgres13},
 	{"mysql 8.0", config.EngineMySQL, 53380, "DBAK_IT_MYSQL_BIN", sqlhelper.MySQL8020},
 	{"mariadb 10.11", config.EngineMySQL, 53310, "DBAK_IT_MARIADB_BIN", sqlhelper.MariaDBOlder},
+}
+
+func serverNamed(t *testing.T, name string) server {
+	t.Helper()
+	for _, s := range servers {
+		if s.name == name {
+			return s
+		}
+	}
+	t.Fatalf("no test server %s", name)
+	return server{}
 }
 
 func binary(t *testing.T, s server) string {
@@ -122,7 +135,7 @@ func TestIntegrationInspector(t *testing.T) {
 
 func TestIntegrationPrivilegeCheckFindsTableAndFixWorks(t *testing.T) {
 	ctx := context.Background()
-	s := servers[1]
+	s := serverNamed(t, "postgres 13")
 	e := newEngine(t, s, "backup_ro", testPassword)
 	available(t, e)
 	report, err := e.PrivilegeCheck(ctx, "app_restricted")
@@ -148,7 +161,7 @@ func TestIntegrationPrivilegeCheckFindsTableAndFixWorks(t *testing.T) {
 
 func TestIntegrationMySQLPrivilegeFix(t *testing.T) {
 	ctx := context.Background()
-	s := servers[2]
+	s := serverNamed(t, "mysql 8.0")
 	available(t, newEngine(t, s, "backup_ro", testPassword))
 	root := mysqlRoot(t, s.port)
 	mustExec(t, root, "CREATE USER 'partial_ro'@'%' IDENTIFIED BY 'Partial123'")

@@ -221,10 +221,23 @@ func verifyMySQL(t *testing.T, data []byte) {
 func targets() []target {
 	return []target{
 		{"postgres 16", "pg16", config.EnginePostgres, 55416, "disable", "DBAK_IT_PG_BIN", []string{"app_prod"}, verifyPostgres},
+		{"postgres 17", "pg17", config.EnginePostgres, 55417, "disable", "DBAK_IT_PG_BIN", []string{"app_prod"}, verifyPostgres},
+		{"postgres 18", "pg18", config.EnginePostgres, 55418, "disable", "DBAK_IT_PG_BIN", []string{"app_prod"}, verifyPostgres},
 		{"postgres 13", "pg13", config.EnginePostgres, 55413, "disable", "DBAK_IT_PG_BIN", []string{"app_prod"}, verifyPostgres},
 		{"mysql 8.0", "mysql8", config.EngineMySQL, 53380, "preferred", "DBAK_IT_MYSQL_BIN", []string{"app_prod"}, verifyMySQL},
 		{"mariadb 10.11", "mariadb", config.EngineMySQL, 53310, "preferred", "DBAK_IT_MARIADB_BIN", []string{"app_prod"}, verifyMySQL},
 	}
+}
+
+func targetNamed(t *testing.T, source string) target {
+	t.Helper()
+	for _, tg := range targets() {
+		if tg.source == source {
+			return tg
+		}
+	}
+	t.Fatalf("no test target %s", source)
+	return target{}
 }
 
 func TestIntegrationBackupEndToEnd(t *testing.T) {
@@ -365,8 +378,7 @@ func TestIntegrationTwoSources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	all := targets()
-	pg, mysql := all[0], all[2]
+	pg, mysql := targetNamed(t, "pg16"), targetNamed(t, "mysql8")
 	opts := writeSources(t, knownHosts, sourceFor(t, pg), sourceFor(t, mysql))
 	waitForDatabase(t, opts)
 	var logs bytes.Buffer
@@ -423,8 +435,7 @@ func TestIntegrationEncryptedBackups(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	all := targets()
-	pg, mysql := all[0], all[2]
+	pg, mysql := targetNamed(t, "pg16"), targetNamed(t, "mysql8")
 	opts := writeSources(t, knownHosts, sourceFor(t, pg), sourceFor(t, mysql))
 	cfg, err := config.Load(opts.ConfigPath)
 	if err != nil {

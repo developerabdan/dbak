@@ -11,6 +11,30 @@ services:
         target: /docker-entrypoint-initdb.d/init.sql
         mode: 0444
 
+  postgres17:
+    image: postgres:17
+    environment:
+      POSTGRES_PASSWORD: rootpass
+      POSTGRES_DB: app_prod
+    ports:
+      - "127.0.0.1:55417:5432"
+    configs:
+      - source: postgres17_init
+        target: /docker-entrypoint-initdb.d/init.sql
+        mode: 0444
+
+  postgres18:
+    image: postgres:18
+    environment:
+      POSTGRES_PASSWORD: rootpass
+      POSTGRES_DB: app_prod
+    ports:
+      - "127.0.0.1:55418:5432"
+    configs:
+      - source: postgres18_init
+        target: /docker-entrypoint-initdb.d/init.sql
+        mode: 0444
+
   postgres13:
     image: postgres:13
     environment:
@@ -59,12 +83,14 @@ services:
         mode: 0444
 
 configs:
-  postgres16_init:
+  postgres16_init: &postgres_modern_init
     content: |
       CREATE ROLE backup_ro WITH LOGIN PASSWORD 'Te:st\pa"ss#1';
       GRANT pg_read_all_data TO backup_ro;
       CREATE TABLE customers (id serial PRIMARY KEY, name text NOT NULL);
       INSERT INTO customers (name) SELECT 'customer ' || g FROM generate_series(1, 1000) AS g;
+  postgres17_init: *postgres_modern_init
+  postgres18_init: *postgres_modern_init
   postgres13_init:
     content: |
       CREATE ROLE backup_ro WITH LOGIN PASSWORD 'Te:st\pa"ss#1';
