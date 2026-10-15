@@ -9,6 +9,7 @@ import (
 
 	"dbak/internal/config"
 	"dbak/internal/engine"
+	"dbak/internal/schedule"
 	"dbak/internal/sftp"
 	"dbak/internal/state"
 	"dbak/internal/system"
@@ -60,6 +61,8 @@ type Env struct {
 	DialSFTP     func(cfg sftp.Config) (SFTPClient, error)
 	FetchHostKey func(host string, port int) (ssh.PublicKey, error)
 	RunBackup    func(ctx context.Context) (state.Run, error)
+
+	InstallSchedule func(ctx context.Context, sc config.Schedule) (schedule.Result, error)
 }
 
 func (e *Env) now() time.Time {

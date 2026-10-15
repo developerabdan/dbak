@@ -37,6 +37,7 @@ func runFull(ctx context.Context, s *session) error {
 		s.configureRetention,
 		s.configureNotify,
 		s.confirmAndSave,
+		func() error { s.installSchedule(ctx); return nil },
 	}
 	for _, step := range steps {
 		if err := step(); err != nil {
@@ -101,6 +102,7 @@ func editSection(ctx context.Context, s *session) error {
 	if err := s.confirmAndSave(); err != nil {
 		return err
 	}
+	s.installSchedule(ctx)
 	return s.offerBackup(ctx, "Run a backup now?")
 }
 

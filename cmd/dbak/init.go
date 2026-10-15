@@ -61,6 +61,11 @@ func newInitEnv(opts *globalOptions) (*onboard.Env, error) {
 		return nil, err
 	}
 	release, _ := system.ReadOSRelease("/etc/os-release")
+	installer, err := newScheduleInstaller(opts)
+	if err != nil {
+		return nil, err
+	}
+	installer.Owner = owner
 	return &onboard.Env{
 		UI:         onboard.NewStdUI(),
 		Paths:      onboard.Paths{ConfigPath: opts.configPath, StateDir: opts.stateDir},
@@ -92,6 +97,7 @@ func newInitEnv(opts *globalOptions) (*onboard.Env, error) {
 				Logger:     progressLogger(),
 			})
 		},
+		InstallSchedule: installer.Install,
 	}, nil
 }
 

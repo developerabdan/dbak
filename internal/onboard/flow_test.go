@@ -15,6 +15,7 @@ import (
 
 	"dbak/internal/config"
 	"dbak/internal/engine"
+	"dbak/internal/schedule"
 	"dbak/internal/sftp"
 	"dbak/internal/sftp/sftptest"
 	"dbak/internal/state"
@@ -22,14 +23,16 @@ import (
 )
 
 type harness struct {
-	env        *Env
-	ui         *fakeUI
-	eng        *fakeEngine
-	server     *sftptest.Server
-	remoteRoot string
-	backups    int
-	commands   [][]string
-	sources    []config.Source
+	env         *Env
+	ui          *fakeUI
+	eng         *fakeEngine
+	server      *sftptest.Server
+	remoteRoot  string
+	backups     int
+	schedules   []config.Schedule
+	scheduleErr error
+	commands    [][]string
+	sources     []config.Source
 }
 
 func newHarness(t *testing.T) *harness {
@@ -79,6 +82,14 @@ func newHarness(t *testing.T) *harness {
 			return state.Run{Status: state.StatusSuccess, Databases: []state.Database{
 				{Name: "app_prod", Status: state.StatusSuccess, SizeBytes: 2048, RemotePath: "/backups/vm-app-01/app_prod/app_prod_20261015T120000Z.dump"},
 			}}, nil
+		},
+		InstallSchedule: func(_ context.Context, sc config.Schedule) (schedule.Result, error) {
+			h.schedules = append(h.schedules, sc)
+			if h.scheduleErr != nil {
+				return schedule.Result{Warnings: []string{"The test warning."}}, h.scheduleErr
+			}
+			plan, err := schedule.NewPlan(sc)
+			return schedule.Result{Mode: schedule.ModeSystemd, Plan: plan}, err
 		},
 	}
 	return h
@@ -184,6 +195,7 @@ func TestFullOnboarding(t *testing.T) {
 		"Database password: ********",
 		"Webhook:           https://hooks.example.com/********",
 		"chat -1001, token ********",
+		"OK: dbak installed the systemd timer dbak.timer: daily at 02:00 Asia/Jakarta.",
 		"OK: app_prod: 2.0 KiB",
 	} {
 		if !strings.Contains(out, want) {
@@ -213,6 +225,9 @@ func TestFullOnboarding(t *testing.T) {
 	assertMode(t, cfg.Destination.KnownHostsFile, 0o600)
 	if h.backups != 1 {
 		t.Fatalf("got %d backups, want 1", h.backups)
+	}
+	if len(h.schedules) != 1 || h.schedules[0] != cfg.Schedule {
+		t.Fatalf("got installed schedules %+v, want %+v", h.schedules, cfg.Schedule)
 	}
 	if h.sources[len(h.sources)-1].Port != 5432 || h.sources[len(h.sources)-1].SSLMode != "prefer" {
 		t.Fatalf("unexpected source defaults: %+v", h.sources[len(h.sources)-1])
@@ -434,8 +449,41 @@ func TestExistingConfigEditRetention(t *testing.T) {
 	if cfg.Retention != (config.Retention{Daily: 14}) {
 		t.Fatalf("got %+v", cfg.Retention)
 	}
+	if len(h.schedules) != 2 {
+		t.Fatalf("got %d schedule installs, want 2", len(h.schedules))
+	}
 	assertSecret(t, cfg.Source.PasswordFile, "s3cret")
 	assertSecret(t, cfg.Notify.TelegramTokenFile, "123:ABC")
+}
+
+func TestScheduleInstallFailureContinues(t *testing.T) {
+	h := newHarness(t)
+	h.scheduleErr = errors.New("systemd does not accept the schedule")
+	answers := []answer{
+		{match: "database engine", value: config.EnginePostgres},
+		{match: "database user for backup", value: "yes"},
+	}
+	answers = append(answers, credentialAnswers("s3cret")...)
+	answers = append(answers, answer{match: "Select the databases"})
+	answers = append(answers, h.destinationAnswers(t)...)
+	answers = append(answers, tailAnswers()...)
+	answers = append(answers, answer{match: "Run the first backup now?", value: true})
+	if err := h.run(t, answers...); err != nil {
+		t.Fatal(err)
+	}
+	out := h.ui.out.String()
+	for _, want := range []string{
+		"WARNING: The test warning.",
+		"ERROR: systemd does not accept the schedule.",
+		"no schedule is installed. Correct the problem, then run: sudo dbak schedule",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the output does not contain %q:\n%s", want, out)
+		}
+	}
+	if h.backups != 1 {
+		t.Fatalf("got %d backups, want 1", h.backups)
+	}
 }
 
 func TestExistingConfigCancel(t *testing.T) {

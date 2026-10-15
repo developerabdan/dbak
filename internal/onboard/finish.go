@@ -123,6 +123,20 @@ func (s *session) save() error {
 	return s.env.Owner.MkdirAll(s.env.Paths.StateDir, 0o750)
 }
 
+func (s *session) installSchedule(ctx context.Context) {
+	ui := s.env.UI
+	res, err := s.env.InstallSchedule(ctx, s.cfg.Schedule)
+	for _, w := range res.Warnings {
+		ui.Warn(w)
+	}
+	if err != nil {
+		ui.Error(app.Sentence(err.Error()))
+		ui.Info("The config is saved, but no schedule is installed. Correct the problem, then run: sudo dbak schedule")
+		return
+	}
+	ui.Success(res.Summary())
+}
+
 func (s *session) offerBackup(ctx context.Context, title string) error {
 	ui := s.env.UI
 	run, err := ui.Confirm(title, "", true)
