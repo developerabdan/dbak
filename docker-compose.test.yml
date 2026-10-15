@@ -6,8 +6,10 @@ services:
       POSTGRES_DB: app_prod
     ports:
       - "127.0.0.1:55416:5432"
-    volumes:
-      - ./testdata/integration/postgres16:/docker-entrypoint-initdb.d:ro
+    configs:
+      - source: postgres16_init
+        target: /docker-entrypoint-initdb.d/init.sql
+        mode: 0444
 
   postgres13:
     image: postgres:13
@@ -16,8 +18,10 @@ services:
       POSTGRES_DB: app_prod
     ports:
       - "127.0.0.1:55413:5432"
-    volumes:
-      - ./testdata/integration/postgres13:/docker-entrypoint-initdb.d:ro
+    configs:
+      - source: postgres13_init
+        target: /docker-entrypoint-initdb.d/init.sql
+        mode: 0444
 
   mysql8:
     image: mysql:8.0
@@ -27,8 +31,10 @@ services:
       MYSQL_DATABASE: app_prod
     ports:
       - "127.0.0.1:53380:3306"
-    volumes:
-      - ./testdata/integration/mysql8:/docker-entrypoint-initdb.d:ro
+    configs:
+      - source: mysql8_init
+        target: /docker-entrypoint-initdb.d/init.sql
+        mode: 0444
 
   mariadb:
     image: mariadb:10.11
@@ -37,13 +43,59 @@ services:
       MARIADB_DATABASE: app_prod
     ports:
       - "127.0.0.1:53310:3306"
-    volumes:
-      - ./testdata/integration/mariadb:/docker-entrypoint-initdb.d:ro
+    configs:
+      - source: mariadb_init
+        target: /docker-entrypoint-initdb.d/init.sql
+        mode: 0444
 
   sftp:
     image: atmoz/sftp:alpine
     command: ["dbak::1001:1001:upload"]
     ports:
       - "127.0.0.1:52222:22"
-    volumes:
-      - ./testdata/integration/ssh/id_ed25519.pub:/home/dbak/.ssh/keys/id_ed25519.pub:ro
+    configs:
+      - source: sftp_key
+        target: /home/dbak/.ssh/keys/id_ed25519.pub
+        mode: 0444
+
+configs:
+  postgres16_init:
+    content: |
+      CREATE ROLE backup_ro WITH LOGIN PASSWORD 'Te:st\pa"ss#1';
+      GRANT pg_read_all_data TO backup_ro;
+      CREATE TABLE customers (id serial PRIMARY KEY, name text NOT NULL);
+      INSERT INTO customers (name) SELECT 'customer ' || g FROM generate_series(1, 1000) AS g;
+  postgres13_init:
+    content: |
+      CREATE ROLE backup_ro WITH LOGIN PASSWORD 'Te:st\pa"ss#1';
+      CREATE TABLE customers (id serial PRIMARY KEY, name text NOT NULL);
+      INSERT INTO customers (name) SELECT 'customer ' || g FROM generate_series(1, 1000) AS g;
+      GRANT CONNECT ON DATABASE app_prod TO backup_ro;
+      GRANT USAGE ON SCHEMA public TO backup_ro;
+      GRANT SELECT ON ALL TABLES IN SCHEMA public TO backup_ro;
+      GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO backup_ro;
+      CREATE DATABASE app_restricted;
+      \c app_restricted
+      CREATE TABLE open_table (id int);
+      GRANT USAGE ON SCHEMA public TO backup_ro;
+      GRANT SELECT ON open_table TO backup_ro;
+      CREATE TABLE audit_log (id int);
+  mysql8_init:
+    content: |
+      CREATE USER 'backup_ro'@'%' IDENTIFIED BY 'Te:st\\pa"ss#1';
+      GRANT SELECT, SHOW VIEW, TRIGGER, LOCK TABLES, EVENT ON `app_prod`.* TO 'backup_ro'@'%';
+      GRANT SHOW_ROUTINE ON *.* TO 'backup_ro'@'%';
+      USE app_prod;
+      CREATE TABLE customers (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100) NOT NULL);
+      INSERT INTO customers (name) VALUES ('alpha'), ('beta'), ('gamma');
+  mariadb_init:
+    content: |
+      CREATE USER 'backup_ro'@'%' IDENTIFIED BY 'Te:st\\pa"ss#1';
+      GRANT SELECT, SHOW VIEW, TRIGGER, LOCK TABLES, EVENT ON `app_prod`.* TO 'backup_ro'@'%';
+      GRANT SELECT ON `mysql`.`proc` TO 'backup_ro'@'%';
+      USE app_prod;
+      CREATE TABLE customers (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100) NOT NULL);
+      INSERT INTO customers (name) VALUES ('alpha'), ('beta'), ('gamma');
+  sftp_key:
+    content: |
+      ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBqhB+k60M+wEDfNcU5IHZbRuHByOg3/NLF09f+fdYM5 dbak-integration-test
