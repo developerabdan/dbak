@@ -20,6 +20,9 @@ the backups to an SFTP server.
   user cannot read. It shows the GRANT statement that corrects the problem.
 - **No local copy.** The dump goes directly to the SFTP server. A file gets its
   final name only after the upload is complete.
+- **Encrypted backups.** dbak can encrypt each backup with
+  [age](https://age-encryption.org) before the upload. Only the public key is
+  on the server. You can restore a backup without dbak.
 - **Pinned host key.** dbak pins the SFTP host key in `dbak init`. If the key
   changes, the backup stops.
 - **Schedule in your timezone.** dbak installs a systemd timer. If the system
@@ -90,7 +93,8 @@ sudo dbak init
 6. Add the public key that dbak shows to `~/.ssh/authorized_keys` on the SFTP
    server.
 7. Make sure that the host key fingerprint is correct.
-8. Select the schedule, the retention, and the notifications.
+8. Select the schedule, the retention, the backup encryption, and the
+   notifications.
 9. Let dbak run the first backup.
 
 To see the result, run `dbak status`.
@@ -197,6 +201,9 @@ notify:
   telegram_token_file: ""
   telegram_chat_id: ""
   healthcheck_url: ""
+encryption:
+  recipients:
+    - age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p
 ```
 
 | Field | Values |
@@ -210,6 +217,7 @@ notify:
 | `schedule.weekday` | `Sun` to `Sat`. Only for `weekly`. |
 | `schedule.randomized_delay` | `0`, `5m`, or `15m`. |
 | `notify.when` | `failure`, `always`, or `never`. The healthcheck ping does not use this field. |
+| `encryption.recipients` | Optional. A list of age X25519 public keys that start with `age1`. If the list is empty, dbak does not encrypt. |
 
 The config does not contain secrets. Each secret is in a separate file that the
 config names.
@@ -228,6 +236,63 @@ The new backups go to `<remote_path>/<hostname>/default/<database>/`. The old
 backups stay in `<remote_path>/<hostname>/<database>/`. `dbak list` and the
 retention do not see the old backups. When you do not need them, remove them
 manually on the SFTP server.
+
+## Encryption
+
+dbak encrypts each backup with age before the upload. The SFTP server gets
+only encrypted files. The VM keeps only the public keys, so a person with root
+access to the VM cannot read the old backups.
+
+In `dbak init`, select one option:
+
+- **Make a new key for me.** dbak makes a key and shows the private key one
+  time. Save the key in a password manager. Then paste the key back. dbak makes
+  sure that the key is correct, clears the screen, and keeps only the public
+  key.
+- **I have an age public key.** Make the key on a different computer with
+  `age-keygen -o dbak-key.txt`. Paste the `age1...` public key into
+  `dbak init`. The private key never touches the VM.
+
+You can add more public keys, for example for a team member or an emergency
+key. Each key can decrypt all backups. dbak accepts only X25519 keys, not the
+post-quantum keys from `age-keygen -pq`. The `age` tool in many Linux
+distributions cannot decrypt files for post-quantum keys.
+
+> **Warning:** If you lose all private keys, nobody can restore the encrypted
+> backups. Keep two copies of the private key in different places. Do not keep
+> the only copy on the VM or on the SFTP server.
+
+If you turn encryption off, the next backups are not encrypted. The old
+backups stay encrypted.
+
+## Restore after a disaster
+
+You do not need dbak or the old VM. On any computer, you need the private key,
+the `age` tool, and the restore tools of the database.
+
+1. Download the backup from the SFTP server.
+2. Decrypt the backup and restore it in one command. The decrypted data does
+   not go to the disk.
+
+PostgreSQL:
+
+```sh
+age -d -i dbak-key.txt app_prod_20261015T190000Z.dump.age \
+  | pg_restore --host HOST --username USER --dbname app_prod --no-owner --clean --if-exists
+```
+
+MySQL and MariaDB:
+
+```sh
+age -d -i dbak-key.txt shop_20261015T190000Z.sql.zst.age | zstd -d | mysql --host HOST --user USER -p
+```
+
+The MySQL dump contains `CREATE DATABASE` and `USE`, so it restores into the
+database with the original name. For a backup without encryption, do not use
+the `age -d` step.
+
+Use a database user with write privileges. The read-only backup user cannot
+restore. Do a test restore one time after the setup.
 
 ## Retention
 
@@ -290,6 +355,10 @@ The time is in UTC, so the alphabetical order is also the time order.
 | PostgreSQL | `.dump` | `pg_dump --format=custom` |
 | MySQL, MariaDB | `.sql.zst` | `mysqldump` output, compressed with zstd |
 
+With encryption, the file name gets `.age` after the extension, for example
+`.dump.age`. The retention and `dbak list` accept files with and without
+`.age`.
+
 ## Files on the server
 
 | Path | Content | Owner and mode |
@@ -338,7 +407,12 @@ The end-to-end tests run dbak in Linux containers:
 ```sh
 ./test/e2e/init.sh
 ./test/e2e/schedule.sh
+./test/e2e/install.sh
+./test/e2e/restore.sh
 ```
+
+`restore.sh` makes an encrypted backup, removes the VM container, and restores
+the backup without dbak.
 
 To stop the test containers, run
 `docker compose -f docker-compose.test.yml -p dbaktest down -v`.
