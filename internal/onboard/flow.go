@@ -35,7 +35,7 @@ func runFull(ctx context.Context, s *session) error {
 		func() error { return s.configureDestination(ctx) },
 		s.configureSchedule,
 		s.configureRetention,
-		s.configureNotify,
+		func() error { return s.configureNotify(ctx) },
 		s.confirmAndSave,
 		func() error { s.installSchedule(ctx); return nil },
 	}
@@ -94,7 +94,7 @@ func editSection(ctx context.Context, s *session) error {
 	case sectionRetention:
 		err = s.configureRetention()
 	case sectionNotification:
-		err = s.configureNotify()
+		err = s.configureNotify(ctx)
 	}
 	if err != nil {
 		return err

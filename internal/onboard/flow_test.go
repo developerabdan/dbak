@@ -23,16 +23,18 @@ import (
 )
 
 type harness struct {
-	env         *Env
-	ui          *fakeUI
-	eng         *fakeEngine
-	server      *sftptest.Server
-	remoteRoot  string
-	backups     int
-	schedules   []config.Schedule
-	scheduleErr error
-	commands    [][]string
-	sources     []config.Source
+	env          *Env
+	ui           *fakeUI
+	eng          *fakeEngine
+	server       *sftptest.Server
+	remoteRoot   string
+	backups      int
+	schedules    []config.Schedule
+	scheduleErr  error
+	telegramErrs []error
+	telegramSent []string
+	commands     [][]string
+	sources      []config.Source
 }
 
 func newHarness(t *testing.T) *harness {
@@ -82,6 +84,15 @@ func newHarness(t *testing.T) *harness {
 			return state.Run{Status: state.StatusSuccess, Databases: []state.Database{
 				{Name: "app_prod", Status: state.StatusSuccess, SizeBytes: 2048, RemotePath: "/backups/vm-app-01/app_prod/app_prod_20261015T120000Z.dump"},
 			}}, nil
+		},
+		SendTelegramTest: func(_ context.Context, token, chatID string) error {
+			h.telegramSent = append(h.telegramSent, token+" "+chatID)
+			if len(h.telegramErrs) > 0 {
+				err := h.telegramErrs[0]
+				h.telegramErrs = h.telegramErrs[1:]
+				return err
+			}
+			return nil
 		},
 		InstallSchedule: func(_ context.Context, sc config.Schedule) (schedule.Result, error) {
 			h.schedules = append(h.schedules, sc)
@@ -225,6 +236,9 @@ func TestFullOnboarding(t *testing.T) {
 	assertMode(t, cfg.Destination.KnownHostsFile, 0o600)
 	if h.backups != 1 {
 		t.Fatalf("got %d backups, want 1", h.backups)
+	}
+	if !slices.Equal(h.telegramSent, []string{"123:ABC -1001"}) {
+		t.Fatalf("got Telegram tests %v", h.telegramSent)
 	}
 	if len(h.schedules) != 1 || h.schedules[0] != cfg.Schedule {
 		t.Fatalf("got installed schedules %+v, want %+v", h.schedules, cfg.Schedule)
@@ -483,6 +497,38 @@ func TestScheduleInstallFailureContinues(t *testing.T) {
 	}
 	if h.backups != 1 {
 		t.Fatalf("got %d backups, want 1", h.backups)
+	}
+}
+
+func TestTelegramTestFailure(t *testing.T) {
+	h := newHarness(t)
+	h.telegramErrs = []error{errors.New("the server returned HTTP status 400: Bad Request: chat not found"), errors.New("the server returned HTTP status 401")}
+	h.ui = newFakeUI(t,
+		answer{match: "When must dbak send", value: config.NotifyFailure},
+		answer{match: "Webhook URL", value: ""},
+		answer{match: "Telegram?", value: true},
+		answer{match: "Telegram bot token", value: "123:ABC"},
+		answer{match: "Telegram chat ID", value: "-1"},
+		answer{match: "What do you want to do?", value: "retry"},
+		answer{match: "Telegram bot token", value: ""},
+		answer{match: "Telegram chat ID", value: "-2"},
+		answer{match: "What do you want to do?", value: "skip"},
+		answer{match: "Healthcheck URL", value: ""},
+	)
+	h.env.UI = h.ui
+	s := newSession(h.env)
+	if err := s.configureNotify(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	h.ui.done()
+	if !slices.Equal(h.telegramSent, []string{"123:ABC -1", "123:ABC -2"}) {
+		t.Fatalf("got Telegram tests %v", h.telegramSent)
+	}
+	if s.cfg.Notify.TelegramChatID != "" || s.cfg.Notify.TelegramTokenFile != "" || s.telegramToken != "" {
+		t.Fatalf("got Telegram settings after skip: %+v", s.cfg.Notify)
+	}
+	if !strings.Contains(h.ui.out.String(), "ERROR: The test message failed: The server returned HTTP status 400: Bad Request: chat not found.") {
+		t.Fatalf("got output:\n%s", h.ui.out.String())
 	}
 }
 

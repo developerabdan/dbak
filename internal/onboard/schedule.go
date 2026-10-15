@@ -1,12 +1,14 @@
 package onboard
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
 	"time"
 
+	"github.com/developerabdan/dbak/internal/app"
 	"github.com/developerabdan/dbak/internal/config"
 	"github.com/developerabdan/dbak/internal/schedule"
 )
@@ -132,7 +134,7 @@ func askCount(ui UI, title string, value int) (int, error) {
 	return n, nil
 }
 
-func (s *session) configureNotify() error {
+func (s *session) configureNotify(ctx context.Context) error {
 	ui := s.env.UI
 	ui.Heading("Notifications")
 	n := &s.cfg.Notify
@@ -145,7 +147,7 @@ func (s *session) configureNotify() error {
 		if n.WebhookURL, err = ui.Input("Webhook URL", "dbak sends a POST request with JSON. Leave the field empty if you do not use a webhook.", n.WebhookURL, optionalURL); err != nil {
 			return err
 		}
-		if err := s.configureTelegram(); err != nil {
+		if err := s.configureTelegram(ctx); err != nil {
 			return err
 		}
 	}
@@ -153,17 +155,47 @@ func (s *session) configureNotify() error {
 	return err
 }
 
-func (s *session) configureTelegram() error {
+func (s *session) configureTelegram(ctx context.Context) error {
 	ui := s.env.UI
 	n := &s.cfg.Notify
 	use, err := ui.Confirm("Send notifications to Telegram?", "", n.TelegramChatID != "")
 	if err != nil {
 		return err
 	}
+	for use {
+		if err := s.askTelegram(); err != nil {
+			return err
+		}
+		ui.Info("dbak sends a test message to the Telegram chat.")
+		err := s.env.SendTelegramTest(ctx, s.telegramToken, n.TelegramChatID)
+		if err == nil {
+			ui.Success("dbak sent the test message. Make sure that it is in the Telegram chat.")
+			break
+		}
+		ui.Error("The test message failed: " + app.Sentence(err.Error()))
+		ui.Info("Make sure that the bot token is correct and that the bot is a member of the chat.")
+		choice, err := ui.Select("What do you want to do?", "",
+			options("Type the token and the chat ID again", "retry", "Keep the values without a good test", "keep", "Do not use Telegram", "skip"), "retry")
+		if err != nil {
+			return err
+		}
+		switch choice {
+		case "keep":
+			ui.Warn("Telegram notifications can fail.")
+			return nil
+		case "skip":
+			use = false
+		}
+	}
 	if !use {
 		n.TelegramChatID, n.TelegramTokenFile, s.telegramToken = "", "", ""
-		return nil
 	}
+	return nil
+}
+
+func (s *session) askTelegram() error {
+	ui := s.env.UI
+	n := &s.cfg.Notify
 	description := "dbak keeps the token in a file with mode 0600."
 	validate := required
 	if s.telegramToken != "" {

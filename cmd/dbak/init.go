@@ -18,6 +18,7 @@ import (
 	"github.com/developerabdan/dbak/internal/backup"
 	"github.com/developerabdan/dbak/internal/config"
 	"github.com/developerabdan/dbak/internal/engine"
+	"github.com/developerabdan/dbak/internal/notify"
 	"github.com/developerabdan/dbak/internal/onboard"
 	"github.com/developerabdan/dbak/internal/sftp"
 	"github.com/developerabdan/dbak/internal/state"
@@ -98,6 +99,10 @@ func newInitEnv(opts *globalOptions) (*onboard.Env, error) {
 			})
 		},
 		InstallSchedule: installer.Install,
+		SendTelegramTest: func(ctx context.Context, token, chatID string) error {
+			n := notify.New(config.Notify{TelegramChatID: chatID}, token, slog.New(slog.DiscardHandler))
+			return n.SendTelegram(ctx, notify.TelegramTestText(hostname))
+		},
 	}, nil
 }
 

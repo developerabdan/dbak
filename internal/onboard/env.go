@@ -62,7 +62,8 @@ type Env struct {
 	FetchHostKey func(host string, port int) (ssh.PublicKey, error)
 	RunBackup    func(ctx context.Context) (state.Run, error)
 
-	InstallSchedule func(ctx context.Context, sc config.Schedule) (schedule.Result, error)
+	InstallSchedule  func(ctx context.Context, sc config.Schedule) (schedule.Result, error)
+	SendTelegramTest func(ctx context.Context, token, chatID string) error
 }
 
 func (e *Env) now() time.Time {
