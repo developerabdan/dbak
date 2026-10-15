@@ -41,7 +41,7 @@ func RunUserHelper(ui UI, engineName, defaultHost string) (HelperResult, error) 
 	for _, warning := range script.Warnings {
 		ui.Warn(warning)
 	}
-	ui.Info("The SQL contains the generated password. dbak keeps the password only in the secrets directory.")
+	ui.Info("The SQL contains a generated password. dbak never writes the password to a log.")
 	ran, err := ui.Confirm("I ran the SQL", "Select Yes after you run the SQL on the database server.", true)
 	if err != nil {
 		return HelperResult{}, err
