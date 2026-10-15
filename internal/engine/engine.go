@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const (
@@ -170,10 +171,13 @@ func CommandError(tool string, waitErr error, lastLine string) error {
 	return fmt.Errorf("%s stopped: %w", tool, waitErr)
 }
 
+const WaitDelay = 2 * time.Second
+
 func RunCheck(cmd *exec.Cmd) error {
 	stderr := NewTailBuffer()
 	cmd.Stdout = io.Discard
 	cmd.Stderr = stderr
+	cmd.WaitDelay = WaitDelay
 	tool := filepath.Base(cmd.Path)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("cannot start %s: %w. Make sure that the client tool is installed", tool, err)

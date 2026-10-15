@@ -135,6 +135,7 @@ func (r *Runner) stream(cmd *exec.Cmd, counter *countingWriter) (int64, error) {
 	}
 	stderr := engine.NewTailBuffer()
 	cmd.Stderr = stderr
+	cmd.WaitDelay = engine.WaitDelay
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return 0, err
