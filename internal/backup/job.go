@@ -11,8 +11,11 @@ import (
 	"strings"
 	"time"
 
+	"filippo.io/age"
+
 	"github.com/developerabdan/dbak/internal/app"
 	"github.com/developerabdan/dbak/internal/config"
+	"github.com/developerabdan/dbak/internal/encrypt"
 	"github.com/developerabdan/dbak/internal/engine"
 	"github.com/developerabdan/dbak/internal/engine/mysql"
 	"github.com/developerabdan/dbak/internal/engine/postgres"
@@ -104,6 +107,10 @@ func newNotifier(cfg config.Notify, logger *slog.Logger) *notify.Notifier {
 }
 
 func backupTargets(ctx context.Context, cfg *config.Config, targets []Target, hostname string, opts JobOptions) ([]Result, error) {
+	recipients, err := encrypt.ParseRecipients(cfg.Encryption.Recipients)
+	if err != nil {
+		return failTargets(targets, err, FailureConfig), app.Exit(app.ExitConfigInvalid, err)
+	}
 	var client *sftp.Client
 	defer func() {
 		if client != nil {
@@ -125,7 +132,7 @@ func backupTargets(ctx context.Context, cfg *config.Config, targets []Target, ho
 				return results, app.Exit(app.ExitUploadFailed, err)
 			}
 		}
-		results = append(results, backupSource(ctx, cfg, client, eng, target, hostname, logger)...)
+		results = append(results, backupSource(ctx, cfg, client, eng, recipients, target, hostname, logger)...)
 	}
 	return results, nil
 }
@@ -147,13 +154,14 @@ func openSource(ctx context.Context, target Target, stateDir string, logger *slo
 	return eng, nil
 }
 
-func backupSource(ctx context.Context, cfg *config.Config, client *sftp.Client, eng engine.Engine, target Target, hostname string, logger *slog.Logger) []Result {
+func backupSource(ctx context.Context, cfg *config.Config, client *sftp.Client, eng engine.Engine, recipients []age.Recipient, target Target, hostname string, logger *slog.Logger) []Result {
 	runner := &Runner{
 		Engine:     eng,
 		Store:      client,
 		RemotePath: cfg.Destination.RemotePath,
 		Hostname:   hostname,
 		Source:     target.Source.Name,
+		Recipients: recipients,
 		Logger:     logger,
 	}
 	results := runner.Run(ctx, target.Databases)

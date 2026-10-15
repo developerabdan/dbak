@@ -179,10 +179,13 @@ func TestRemovePartialFiles(t *testing.T) {
 
 func TestParse(t *testing.T) {
 	good := map[string]File{
-		"app_prod_20261015T190000Z.dump":            {Name: "app_prod_20261015T190000Z.dump", Time: at("2026-10-15T19:00:00Z")},
-		"app_prod_20261015T190000Z.sql.zst":         {Name: "app_prod_20261015T190000Z.sql.zst", Time: at("2026-10-15T19:00:00Z")},
-		"app_prod_20261015T190000Z.dump.partial":    {Name: "app_prod_20261015T190000Z.dump.partial", Time: at("2026-10-15T19:00:00Z"), Partial: true},
-		"app_prod_20261015T190000Z.sql.zst.partial": {Name: "app_prod_20261015T190000Z.sql.zst.partial", Time: at("2026-10-15T19:00:00Z"), Partial: true},
+		"app_prod_20261015T190000Z.dump":             {Name: "app_prod_20261015T190000Z.dump", Time: at("2026-10-15T19:00:00Z")},
+		"app_prod_20261015T190000Z.sql.zst":          {Name: "app_prod_20261015T190000Z.sql.zst", Time: at("2026-10-15T19:00:00Z")},
+		"app_prod_20261015T190000Z.dump.partial":     {Name: "app_prod_20261015T190000Z.dump.partial", Time: at("2026-10-15T19:00:00Z"), Partial: true},
+		"app_prod_20261015T190000Z.sql.zst.partial":  {Name: "app_prod_20261015T190000Z.sql.zst.partial", Time: at("2026-10-15T19:00:00Z"), Partial: true},
+		"app_prod_20261015T190000Z.dump.age":         {Name: "app_prod_20261015T190000Z.dump.age", Time: at("2026-10-15T19:00:00Z")},
+		"app_prod_20261015T190000Z.sql.zst.age":      {Name: "app_prod_20261015T190000Z.sql.zst.age", Time: at("2026-10-15T19:00:00Z")},
+		"app_prod_20261015T190000Z.dump.age.partial": {Name: "app_prod_20261015T190000Z.dump.age.partial", Time: at("2026-10-15T19:00:00Z"), Partial: true},
 	}
 	for name, want := range good {
 		got, ok := Parse("app_prod", name)
@@ -192,6 +195,9 @@ func TestParse(t *testing.T) {
 	}
 	bad := []string{
 		"app_prod_20261015T190000Z.dump.bak",
+		"app_prod_20261015T190000Z.age",
+		"app_prod_20261015T190000Z.dump.age.age",
+		"app_prod_20261015T190000Z.sql.age",
 		"app_prod_20261015T190000Z.sql",
 		"app_prod_20261015T190000.dump",
 		"app_prod_20261315T190000Z.dump",

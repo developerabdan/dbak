@@ -12,7 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"filippo.io/age"
+
 	"github.com/developerabdan/dbak/internal/app"
+	"github.com/developerabdan/dbak/internal/encrypt"
 	"github.com/developerabdan/dbak/internal/engine"
 	"github.com/developerabdan/dbak/internal/state"
 )
@@ -246,5 +249,94 @@ func TestExitCode(t *testing.T) {
 				t.Fatalf("got %d, want %d", got, c.want)
 			}
 		})
+	}
+}
+
+func TestEncryptedBackup(t *testing.T) {
+	key, err := encrypt.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	recipients, err := encrypt.ParseRecipients([]string{key.Public})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := &fakeEngine{scripts: map[string]string{"app_prod": "printf 'dump data'"}}
+	s := newFakeStore()
+	runner := newRunner(e, s)
+	runner.Recipients = recipients
+	results := runner.Run(context.Background(), []string{"app_prod"})
+	final := "/backups/vm-app-01/main_pg/app_prod/app_prod_20261015T190000Z.dump.age"
+	if results[0].Status != state.StatusSuccess || results[0].RemotePath != final {
+		t.Fatalf("unexpected result: %+v", results[0])
+	}
+	sealed := s.files[final]
+	if sealed == nil || int64(sealed.Len()) != results[0].SizeBytes {
+		t.Fatalf("the size %d is not the size of the encrypted file", results[0].SizeBytes)
+	}
+	if strings.Contains(sealed.String(), "dump data") {
+		t.Fatal("the uploaded file contains plain data")
+	}
+	identity, err := age.ParseX25519Identity(key.Private)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := age.Decrypt(bytes.NewReader(sealed.Bytes()), identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain, err := io.ReadAll(r)
+	if err != nil || string(plain) != "dump data" {
+		t.Fatalf("got %q %v after decryption", plain, err)
+	}
+}
+
+type closingEngine struct {
+	fakeEngine
+}
+
+type writeOnClose struct {
+	w   io.Writer
+	buf bytes.Buffer
+}
+
+func (c *writeOnClose) Write(p []byte) (int, error) { return c.buf.Write(p) }
+func (c *writeOnClose) Close() error {
+	_, err := c.w.Write(append([]byte("compressed:"), c.buf.Bytes()...))
+	return err
+}
+
+func (e *closingEngine) WrapOutput(w io.Writer) (io.WriteCloser, error) {
+	return &writeOnClose{w: w}, nil
+}
+
+func TestEncryptionClosesAfterTheEngineOutput(t *testing.T) {
+	key, err := encrypt.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	recipients, err := encrypt.ParseRecipients([]string{key.Public})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := &closingEngine{fakeEngine{scripts: map[string]string{"shop": "printf 'rows'"}}}
+	s := newFakeStore()
+	runner := newRunner(e, s)
+	runner.Recipients = recipients
+	results := runner.Run(context.Background(), []string{"shop"})
+	if results[0].Status != state.StatusSuccess {
+		t.Fatalf("unexpected result: %+v", results[0])
+	}
+	identity, err := age.ParseX25519Identity(key.Private)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := age.Decrypt(bytes.NewReader(s.files[results[0].RemotePath].Bytes()), identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain, err := io.ReadAll(r)
+	if err != nil || string(plain) != "compressed:rows" {
+		t.Fatalf("got %q %v, want the data that the engine wrote at close", plain, err)
 	}
 }

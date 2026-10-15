@@ -12,7 +12,10 @@ import (
 	"path/filepath"
 	"time"
 
+	"filippo.io/age"
+
 	"github.com/developerabdan/dbak/internal/app"
+	"github.com/developerabdan/dbak/internal/encrypt"
 	"github.com/developerabdan/dbak/internal/engine"
 	"github.com/developerabdan/dbak/internal/state"
 )
@@ -51,8 +54,20 @@ type Runner struct {
 	RemotePath string
 	Hostname   string
 	Source     string
+	Recipients []age.Recipient
 	Logger     *slog.Logger
 	Now        func() time.Time
+}
+
+func (r *Runner) encrypted() bool {
+	return len(r.Recipients) > 0
+}
+
+func (r *Runner) extension() string {
+	if r.encrypted() {
+		return r.Engine.FileExtension() + "." + encrypt.Extension
+	}
+	return r.Engine.FileExtension()
 }
 
 func (r *Runner) Run(ctx context.Context, databases []string) []Result {
@@ -65,7 +80,7 @@ func (r *Runner) Run(ctx context.Context, databases []string) []Result {
 
 func (r *Runner) runOne(ctx context.Context, database string) Result {
 	started := r.now()
-	final := RemoteFile(r.RemotePath, r.Hostname, r.Source, database, started, r.Engine.FileExtension())
+	final := RemoteFile(r.RemotePath, r.Hostname, r.Source, database, started, r.extension())
 	partial := final + PartialSuffix
 	r.Logger.Info(fmt.Sprintf("Backup of %s started.", database), "database", database)
 	size, created, err := r.upload(ctx, database, partial)
@@ -83,7 +98,7 @@ func (r *Runner) runOne(ctx context.Context, database string) Result {
 	}
 	duration := r.now().Sub(started)
 	r.Logger.Info(fmt.Sprintf("Backup of %s completed.", database),
-		"database", database, "size_bytes", size, "duration", duration.Round(time.Millisecond).String(), "remote_path", final)
+		"database", database, "size_bytes", size, "duration", duration.Round(time.Millisecond).String(), "encrypted", r.encrypted(), "remote_path", final)
 	return Result{Database: state.Database{
 		Source:     r.Source,
 		Name:       database,
@@ -140,7 +155,16 @@ func (r *Runner) upload(ctx context.Context, database, partial string) (int64, b
 
 func (r *Runner) stream(cmd *exec.Cmd, counter *countingWriter) (int64, error) {
 	buffered := bufio.NewWriterSize(counter, uploadBufferSize)
-	out, err := r.Engine.WrapOutput(buffered)
+	var sink io.Writer = buffered
+	var sealer io.WriteCloser
+	if r.encrypted() {
+		var err error
+		if sealer, err = encrypt.NewWriter(buffered, r.Recipients); err != nil {
+			return 0, err
+		}
+		sink = sealer
+	}
+	out, err := r.Engine.WrapOutput(sink)
 	if err != nil {
 		return 0, err
 	}
@@ -168,6 +192,11 @@ func (r *Runner) stream(cmd *exec.Cmd, counter *countingWriter) (int64, error) {
 	}
 	if err := out.Close(); err != nil {
 		return 0, err
+	}
+	if sealer != nil {
+		if err := sealer.Close(); err != nil {
+			return 0, err
+		}
 	}
 	if err := buffered.Flush(); err != nil {
 		return 0, err

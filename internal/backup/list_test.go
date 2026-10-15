@@ -3,6 +3,7 @@ package backup
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -16,6 +17,7 @@ func TestListBackups(t *testing.T) {
 		"app_prod_20261013T190000Z.dump",
 		"app_prod_20261015T190000Z.dump",
 		"app_prod_20261014T190000Z.sql.zst",
+		"app_prod_20261016T020000Z.dump.age",
 		"app_prod_20261016T190000Z.dump.partial",
 		"notes.txt",
 	)
@@ -27,8 +29,8 @@ func TestListBackups(t *testing.T) {
 	for _, e := range entries {
 		names = append(names, e.Name)
 	}
-	want := []string{"app_prod_20261015T190000Z.dump", "app_prod_20261014T190000Z.sql.zst", "app_prod_20261013T190000Z.dump"}
-	if len(names) != 3 || names[0] != want[0] || names[1] != want[1] || names[2] != want[2] {
+	want := []string{"app_prod_20261016T020000Z.dump.age", "app_prod_20261015T190000Z.dump", "app_prod_20261014T190000Z.sql.zst", "app_prod_20261013T190000Z.dump"}
+	if !slices.Equal(names, want) {
 		t.Fatalf("got %v, want %v", names, want)
 	}
 	if entries[0].SizeBytes != 1 || entries[0].Source != "main_pg" || entries[0].Path != filepath.Join(dir, want[0]) {

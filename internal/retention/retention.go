@@ -16,7 +16,7 @@ const (
 
 var extensions = []string{"dump", "sql.zst"}
 
-var namePattern = regexp.MustCompile(`^([A-Za-z0-9_]+)_(\d{8}T\d{6}Z)\.(dump|sql\.zst)$`)
+var namePattern = regexp.MustCompile(`^([A-Za-z0-9_]+)_(\d{8}T\d{6}Z)\.(dump|sql\.zst)(\.age)?$`)
 
 type Rules struct {
 	Daily     int
