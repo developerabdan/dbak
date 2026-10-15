@@ -22,7 +22,7 @@ func Sentence(message string) string {
 	return message
 }
 
-var commandNames = []string{Name, "mysqldump", "mysql", "psql"}
+var commandNames = []string{Name, "mysqldump", "mysql", "psql", "systemd", "systemctl", "logrotate", "cron", "crond", "shuf"}
 
 func firstWord(message string) string {
 	word, _, _ := strings.Cut(message, " ")
