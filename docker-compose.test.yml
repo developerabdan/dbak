@@ -1,0 +1,49 @@
+services:
+  postgres16:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: rootpass
+      POSTGRES_DB: app_prod
+    ports:
+      - "127.0.0.1:55416:5432"
+    volumes:
+      - ./testdata/integration/postgres16:/docker-entrypoint-initdb.d:ro
+
+  postgres13:
+    image: postgres:13
+    environment:
+      POSTGRES_PASSWORD: rootpass
+      POSTGRES_DB: app_prod
+    ports:
+      - "127.0.0.1:55413:5432"
+    volumes:
+      - ./testdata/integration/postgres13:/docker-entrypoint-initdb.d:ro
+
+  mysql8:
+    image: mysql:8.0
+    command: ["--gtid-mode=ON", "--enforce-gtid-consistency=ON"]
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: app_prod
+    ports:
+      - "127.0.0.1:53380:3306"
+    volumes:
+      - ./testdata/integration/mysql8:/docker-entrypoint-initdb.d:ro
+
+  mariadb:
+    image: mariadb:10.11
+    environment:
+      MARIADB_ROOT_PASSWORD: rootpass
+      MARIADB_DATABASE: app_prod
+    ports:
+      - "127.0.0.1:53310:3306"
+    volumes:
+      - ./testdata/integration/mariadb:/docker-entrypoint-initdb.d:ro
+
+  sftp:
+    image: atmoz/sftp:alpine
+    command: ["dbak::1001:1001:upload"]
+    ports:
+      - "127.0.0.1:52222:22"
+    volumes:
+      - ./testdata/integration/ssh/id_ed25519.pub:/home/dbak/.ssh/keys/id_ed25519.pub:ro
