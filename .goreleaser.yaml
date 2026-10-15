@@ -1,0 +1,45 @@
+version: 2
+
+project_name: dbak
+
+builds:
+  - id: dbak
+    main: ./cmd/dbak
+    binary: dbak
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/developerabdan/dbak/internal/app.Version={{ .Version }}
+      - -X github.com/developerabdan/dbak/internal/app.Commit={{ .ShortCommit }}
+      - -X github.com/developerabdan/dbak/internal/app.Date={{ .Date }}
+
+archives:
+  - id: binaries
+    formats:
+      - binary
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+release:
+  github:
+    owner: developerabdan
+    name: dbak
+  extra_files:
+    - glob: ./install.sh
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^Merge "
