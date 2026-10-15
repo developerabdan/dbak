@@ -13,6 +13,17 @@ import (
 )
 
 func Load(path string) (*Config, error) {
+	cfg, err := Read(path)
+	if err != nil {
+		return nil, err
+	}
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
+
+func Read(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -20,10 +31,21 @@ func Load(path string) (*Config, error) {
 		}
 		return nil, fmt.Errorf("cannot read the config file %s: %w. Make sure that the file has read permission", path, err)
 	}
-	return Parse(data)
+	return Decode(data)
 }
 
 func Parse(data []byte) (*Config, error) {
+	cfg, err := Decode(data)
+	if err != nil {
+		return nil, err
+	}
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
+
+func Decode(data []byte) (*Config, error) {
 	var cfg Config
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
@@ -34,9 +56,6 @@ func Parse(data []byte) (*Config, error) {
 		return nil, fmt.Errorf("the config file has a YAML error: %w. Correct the line in the message", err)
 	}
 	cfg.applyDefaults()
-	if err := cfg.Validate(); err != nil {
-		return nil, err
-	}
 	return &cfg, nil
 }
 
