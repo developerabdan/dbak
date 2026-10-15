@@ -1,0 +1,2 @@
+SELECT DISTINCT schemaname, tableowner FROM pg_tables
+WHERE schemaname NOT IN ('pg_catalog', 'information_schema');

@@ -1,0 +1,6 @@
+CREATE USER '{{.User}}'@'{{.Host}}' IDENTIFIED BY '{{.Password}}';
+{{range .Databases}}GRANT SELECT, SHOW VIEW, TRIGGER, LOCK TABLES, EVENT ON `{{.}}`.* TO '{{$.User}}'@'{{$.Host}}';
+{{end}}{{if eq .Routines "show_routine"}}GRANT SHOW_ROUTINE ON *.* TO '{{.User}}'@'{{.Host}}';
+{{else if eq .Routines "mysql_proc"}}GRANT SELECT ON `mysql`.`proc` TO '{{.User}}'@'{{.Host}}';
+{{else if eq .Routines "show_create_routine"}}GRANT SHOW CREATE ROUTINE ON *.* TO '{{.User}}'@'{{.Host}}';
+{{end}}

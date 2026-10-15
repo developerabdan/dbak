@@ -1,0 +1,2 @@
+{{template "postgres_role.sql.tmpl" .}}{{range .Databases}}GRANT CONNECT ON DATABASE {{.}} TO {{$.User}};
+{{end}}
