@@ -51,10 +51,18 @@ func WritePrivateKey(t testing.TB, dir string, private ed25519.PrivateKey) strin
 
 func Start(t testing.TB) *Server {
 	t.Helper()
+	return StartWithHostKeys(t)
+}
+
+func StartWithHostKeys(t testing.TB, extra ...ssh.Signer) *Server {
+	t.Helper()
 	hostKey, _ := NewSigner(t)
 	s := &Server{Host: "127.0.0.1", HostKey: hostKey}
 	cfg := &ssh.ServerConfig{PublicKeyCallback: s.checkKey}
 	cfg.AddHostKey(hostKey)
+	for _, key := range extra {
+		cfg.AddHostKey(key)
+	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)

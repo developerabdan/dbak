@@ -1,7 +1,9 @@
 package sftp
 
 import (
-	"dbak/internal/sftp/sftptest"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"encoding/pem"
 	"errors"
 	"io"
@@ -12,6 +14,8 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
+
+	"dbak/internal/sftp/sftptest"
 )
 
 type fixture struct {
@@ -222,4 +226,34 @@ func TestWriteKnownHosts(t *testing.T) {
 		t.Fatal(err)
 	}
 	client.Close()
+}
+
+func TestDialUsesThePinnedKeyType(t *testing.T) {
+	ecdsaKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ecdsaSigner, err := ssh.NewSignerFromKey(ecdsaKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := newFixture(t)
+	clientSigner, clientPrivate := sftptest.NewSigner(t)
+	server := sftptest.StartWithHostKeys(t, ecdsaSigner)
+	server.Allow(clientSigner.PublicKey())
+	f.cfg.Host, f.cfg.Port = server.Host, server.Port
+	f.cfg.PrivateKeyFile = sftptest.WritePrivateKey(t, t.TempDir(), clientPrivate)
+	for name, key := range map[string]ssh.PublicKey{"ed25519": server.HostKey.PublicKey(), "ecdsa": ecdsaSigner.PublicKey()} {
+		t.Run("only the "+name+" key is pinned", func(t *testing.T) {
+			line := KnownHostsLine(server.Host, server.Port, key)
+			if err := os.WriteFile(f.cfg.KnownHostsFile, []byte(line), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			client, err := Dial(f.cfg)
+			if err != nil {
+				t.Fatalf("got %v", err)
+			}
+			client.Close()
+		})
+	}
 }

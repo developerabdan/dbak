@@ -1,11 +1,13 @@
 package sftp
 
 import (
+	"crypto/ed25519"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -46,7 +48,7 @@ func Dial(cfg Config) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	hostKeyCallback, hostKeyErr, err := pinnedHostKeyCallback(cfg.KnownHostsFile)
+	hostKeyCallback, hostKeyErr, algorithms, err := pinnedHostKeyCallback(cfg.KnownHostsFile, cfg.Address())
 	if err != nil {
 		return nil, err
 	}
@@ -55,10 +57,11 @@ func Dial(cfg Config) (*Client, error) {
 		timeout = DefaultTimeout
 	}
 	sshClient, err := ssh.Dial("tcp", cfg.Address(), &ssh.ClientConfig{
-		User:            cfg.Username,
-		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
-		HostKeyCallback: hostKeyCallback,
-		Timeout:         timeout,
+		User:              cfg.Username,
+		Auth:              []ssh.AuthMethod{ssh.PublicKeys(signer)},
+		HostKeyCallback:   hostKeyCallback,
+		HostKeyAlgorithms: algorithms,
+		Timeout:           timeout,
 	})
 	if err != nil {
 		if *hostKeyErr != nil {
@@ -93,10 +96,10 @@ func loadSigner(path string) (ssh.Signer, error) {
 	return signer, nil
 }
 
-func pinnedHostKeyCallback(knownHostsFile string) (ssh.HostKeyCallback, *error, error) {
+func pinnedHostKeyCallback(knownHostsFile, address string) (ssh.HostKeyCallback, *error, []string, error) {
 	check, err := knownhosts.New(knownHostsFile)
 	if err != nil {
-		return nil, nil, fmt.Errorf("cannot read the known_hosts file %s: %w. Run \"dbak init\" to pin the host key", knownHostsFile, err)
+		return nil, nil, nil, fmt.Errorf("cannot read the known_hosts file %s: %w. Run \"dbak init\" to pin the host key", knownHostsFile, err)
 	}
 	var classified error
 	callback := func(hostname string, remote net.Addr, key ssh.PublicKey) error {
@@ -114,7 +117,34 @@ func pinnedHostKeyCallback(knownHostsFile string) (ssh.HostKeyCallback, *error, 
 		}
 		return classified
 	}
-	return callback, &classified, nil
+	return callback, &classified, pinnedAlgorithms(check, address), nil
+}
+
+func pinnedAlgorithms(check ssh.HostKeyCallback, address string) []string {
+	probe, err := ssh.NewPublicKey(ed25519.PublicKey(make([]byte, ed25519.PublicKeySize)))
+	if err != nil {
+		return nil
+	}
+	var keyErr *knownhosts.KeyError
+	if !errors.As(check(address, &net.TCPAddr{IP: net.IPv6unspecified}, probe), &keyErr) {
+		return nil
+	}
+	var algorithms []string
+	for _, known := range keyErr.Want {
+		for _, algorithm := range algorithmsForKeyType(known.Key.Type()) {
+			if !slices.Contains(algorithms, algorithm) {
+				algorithms = append(algorithms, algorithm)
+			}
+		}
+	}
+	return algorithms
+}
+
+func algorithmsForKeyType(keyType string) []string {
+	if keyType == ssh.KeyAlgoRSA {
+		return []string{ssh.KeyAlgoRSASHA512, ssh.KeyAlgoRSASHA256, ssh.KeyAlgoRSA}
+	}
+	return []string{keyType}
 }
 
 func (c *Client) MkdirAll(dir string) error {
