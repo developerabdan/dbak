@@ -58,6 +58,7 @@ Installer options:
 |---|---|
 | `DBAK_VERSION=v1.0.0` | Install this version, not the latest version. |
 | `DBAK_NO_INIT=1` | Do not start `dbak init` after the install. |
+| `DBAK_BASE_URL=URL` | Download the release from a mirror of the GitHub Releases page. |
 
 Put the variables after `sudo`:
 
@@ -88,11 +89,35 @@ sudo dbak init
 
 To see the result, run `dbak status`.
 
+## Setup without questions
+
+For automation, give dbak init a config file. dbak does not ask questions:
+
+```sh
+sudo DBAK_DB_PASSWORD='the password' dbak init --config /root/dbak.yaml
+```
+
+dbak reads the file and examines the database, the dump check, and the SFTP
+upload. Only after all checks pass, it writes `/etc/dbak/config.yaml` and the
+secrets, and installs the schedule. If a check fails, dbak changes nothing.
+
+- The database password comes from `DBAK_DB_PASSWORD` or from
+  `source.password_file`.
+- The Telegram bot token comes from `DBAK_TELEGRAM_TOKEN` or from
+  `notify.telegram_token_file`.
+- `destination.private_key_file` must be an existing key without a
+  passphrase.
+- `destination.known_hosts_file` must contain the host key of the SFTP server.
+  Make it with `ssh-keyscan` and compare the fingerprint with the server.
+
+dbak copies the key and the known_hosts file to `/etc/dbak/secrets/`. The exit
+codes are the same as for `dbak run`.
+
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `dbak init` | Asks the questions, saves the config, and installs the schedule. |
+| `dbak init [--config FILE]` | Asks the questions, saves the config, and installs the schedule. With `--config`, it uses the file and does not ask questions. |
 | `dbak run [--db NAME]` | Makes a backup now. The schedule uses this command. |
 | `dbak status [--json]` | Shows the last run of each database and the next scheduled run. |
 | `dbak list [--db NAME]` | Shows the backups on the SFTP server. |
@@ -272,3 +297,16 @@ The end-to-end tests run dbak in Linux containers:
 
 To stop the test containers, run
 `docker compose -f docker-compose.test.yml -p dbaktest down -v`.
+
+## Release
+
+1. Make sure that the CI workflow passes on `main`.
+2. Make a tag, for example `git tag v1.0.0`.
+3. Push the tag with `git push origin v1.0.0`.
+
+The release workflow runs GoReleaser. GoReleaser puts the binaries for
+`linux/amd64` and `linux/arm64`, `checksums.txt`, and `install.sh` on the GitHub
+Releases page.
+
+To build a release locally without a publish, run
+`goreleaser release --snapshot --clean`.
