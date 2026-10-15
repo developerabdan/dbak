@@ -1,0 +1,36 @@
+version: 1
+source:
+  engine: postgres
+  host: 10.0.0.10
+  port: 5432
+  username: backup_ro
+  password_file: /etc/dbak/secrets/db_password
+  ssl_mode: prefer
+  databases:
+    - app_prod
+    - app_audit
+destination:
+  type: sftp
+  host: backup.example.com
+  port: 22
+  username: dbak
+  private_key_file: /etc/dbak/secrets/id_ed25519
+  known_hosts_file: /etc/dbak/secrets/known_hosts
+  remote_path: /backups
+schedule:
+  frequency: daily
+  time: "02:00"
+  every_hours: 0
+  weekday: ""
+  timezone: Asia/Jakarta
+  randomized_delay: 5m
+retention:
+  daily: 7
+  weekly: 4
+  monthly: 6
+notify:
+  when: failure
+  webhook_url: ""
+  telegram_token_file: ""
+  telegram_chat_id: ""
+  healthcheck_url: ""
