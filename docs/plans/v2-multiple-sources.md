@@ -1,7 +1,7 @@
 # Plan: more than one database connection (v2)
 
-Status: draft. The user must confirm the decisions in the last section before
-the build starts.
+Status: accepted on 2026-10-15. The last section shows the decisions. The
+build uses these decisions.
 
 ## Goal
 
@@ -47,6 +47,10 @@ sources:
     ssl_mode: preferred
     databases:
       - shop
+    retention:
+      daily: 14
+      weekly: 0
+      monthly: 0
 destination:
   type: sftp
   host: backup.example.com
@@ -76,35 +80,37 @@ Rules:
   directory. One VM can then use a different `pg_dump` version for each source.
 - The password of each source is in `/etc/dbak/secrets/<name>/db_password`.
   The directory has mode 0700 and the file has mode 0600.
-- `destination`, `schedule`, `retention`, and `notify` stay global.
+- `retention` is optional for each source. If a source has no `retention`,
+  it uses the global `retention`.
+- `destination`, `schedule`, and `notify` stay global.
 
 ### Version 1 configs
 
 The loader still reads version 1. It converts the `source` block to one item in
-`sources` with the name `default` and `legacy_layout: true`. The next save from
-`dbak init` writes version 2. dbak does not change the old file before that
-save.
+`sources` with the name `default`. The next save from `dbak init` writes
+version 2. dbak does not change the old file before that save.
 
 ## Remote layout
 
-- New layout: `<remote_path>/<hostname>/<source>/<db>/<db>_<timestamp>.<ext>`
-- A source with `legacy_layout: true` keeps the v1 layout:
-  `<remote_path>/<hostname>/<db>/`. The old backups stay visible to `list` and
-  to the retention.
-- Validation rejects a source name that is the same as a database name of a
-  legacy source. Both use the directory `<hostname>/<name>/`.
+All sources use this layout:
+`<remote_path>/<hostname>/<source>/<db>/<db>_<timestamp>.<ext>`
+
+After an upgrade from version 1, the old backups stay in
+`<remote_path>/<hostname>/<db>/`. `list` and the retention do not see them. The
+user removes them manually.
 
 ## Backup run
 
 1. Take the lock and send the healthcheck `/start` ping. This step does not
    change.
-2. Connect to the SFTP server one time for the full run.
-3. For each source, in the config order:
+2. For each source, in the config order:
    1. Connect to the database server.
    2. If the connection fails, mark all databases of this source as failed.
       Continue with the next source.
-   3. Make the backup of each database, as in v1.
-   4. Run the retention for each database with a good backup.
+   3. After the first good database connection, connect to the SFTP server.
+      The run uses this one SFTP connection for all sources.
+   4. Make the backup of each database, as in v1.
+   5. Run the retention of the source for each database with a good backup.
 4. Save one run in `state.json`. Each database result gets a `source` field.
 5. Send one notification and the healthcheck ping.
 
@@ -115,8 +121,10 @@ Exit codes:
 | All databases of all sources are good | 0 |
 | Some databases are good | 6 |
 | All connections to the database servers failed | 3 |
+| All password files cannot be read | 2 |
 | All dumps failed | 4 |
 | All uploads failed | 5 |
+| No database is good and the causes are different | 4 |
 
 New flags for `dbak run`:
 
@@ -135,7 +143,7 @@ New flags for `dbak run`:
 
 | Command | Change |
 |---|---|
-| `init` | First run: ask for the name of the connection. After the dump check, ask "Add another database connection?". With a config: the menu can add, change, or remove a connection. |
+| `init` | First run: ask for the name of the source. After the dump check, ask "Add another database source?". With a config: the menu can add, change, or remove a source. The retention section can set a retention for each source. |
 | `init --config` | Read version 1 or 2. The password for a source comes from `DBAK_DB_PASSWORD_<NAME>`, with the source name in capital letters. `DBAK_DB_PASSWORD` stays valid for a config with one source. |
 | `run` | New flag `--source`. |
 | `status` | New `SOURCE` column. The JSON gets a `source` field. |
@@ -153,27 +161,26 @@ each commit.
 1. **Config v2.** Types, validation, the conversion of version 1, and the
    `bin_dir` field. Table tests for the validation and the conversion.
 2. **Pipeline.** Run each source, continue after a failed connection, the new
-   remote layout, the legacy layout, the `source` field in the state, the exit
-   codes, and the notification changes. Unit tests with two fake sources.
+   remote layout, the retention of each source, the `source` field in the
+   state, the exit codes, and the notification changes.
 3. **Commands.** `run --source`, `status`, `list`, `doctor`, and `uninstall`.
-4. **Onboarding.** Add, change, and remove a connection in `dbak init`. Update
+4. **Onboarding.** Add, change, and remove a source in `dbak init`. Update
    `init --config` and the environment variables.
 5. **Integration and end-to-end tests.** One config with PostgreSQL 16 and
    MySQL 8.0. One test where one source fails and the run gives exit code 6.
-   One test that upgrades a version 1 install and keeps the old backups in
-   the retention.
+   One test that upgrades a version 1 config.
 6. **Documents and release.** Update README.md and SPEC.md, then release
    `v0.2.0`.
 
-## Decisions for the user
+## Decisions
 
-Confirm or change each item before the build starts.
+The user confirmed these decisions on 2026-10-15.
 
-| ID | Question | Recommendation |
+| ID | Question | Decision |
 |---|---|---|
 | D1 | A list of sources in one config, or named instances? | A list of sources. |
-| D2 | For an upgrade from v1: keep the old remote layout, or use the new layout? | Keep the old layout for the converted source. |
-| D3 | Retention for each source, or one global retention? | One global retention in v2.0. |
+| D2 | For an upgrade from v1: keep the old remote layout, or use the new layout? | The new layout. The user removes the old backups manually. |
+| D3 | Retention for each source, or one global retention? | A retention for each source. It is optional. Without it, the source uses the global retention. |
 | D4 | Add `bin_dir` for each source? | Yes. |
 | D5 | Can dbak update SPEC.md with the v2 scope before the build? | Yes. |
 | D6 | Version number of the release? | `v0.2.0`. |
