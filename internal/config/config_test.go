@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/developerabdan/dbak/internal/encrypt"
 )
 
 func loadFixture(t *testing.T, name string) []byte {
@@ -290,5 +292,75 @@ func TestReadSecret(t *testing.T) {
 	}
 	if _, err := ReadSecret(empty); err == nil {
 		t.Fatal("got no error for an empty secret")
+	}
+}
+
+func TestEncryption(t *testing.T) {
+	first, err := encrypt.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := encrypt.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	block := func(keys ...string) string {
+		text := "encryption:\n  recipients:\n"
+		for _, k := range keys {
+			text += "    - " + k + "\n"
+		}
+		return text
+	}
+	cases := []struct {
+		name    string
+		extra   string
+		enabled bool
+		field   string
+	}{
+		{"no block", "", false, ""},
+		{"empty list", "encryption:\n  recipients: []\n", false, ""},
+		{"two keys", block(first.Public, second.Public), true, ""},
+		{"bad key", block(first.Public, "age1notakey"), false, "encryption.recipients[1]"},
+		{"private key", block(first.Private), false, "encryption.recipients[0]"},
+		{"duplicate key", block(first.Public, first.Public), false, "encryption.recipients[1]"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			cfg, err := Parse(append(loadValid(t), c.extra...))
+			if c.field == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+				if cfg.Encryption.Enabled() != c.enabled {
+					t.Fatalf("got enabled %v, want %v", cfg.Encryption.Enabled(), c.enabled)
+				}
+				return
+			}
+			var verr *ValidationError
+			if !errors.As(err, &verr) || verr.Problems[0].Field != c.field {
+				t.Fatalf("got %v, want a problem for %s", err, c.field)
+			}
+			if strings.Contains(err.Error(), "AGE-SECRET-KEY") {
+				t.Fatal("the error contains the private key")
+			}
+		})
+	}
+}
+
+func TestSaveOmitsEmptyEncryption(t *testing.T) {
+	cfg, err := Parse(loadValid(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := Save(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "encryption") {
+		t.Fatalf("the saved config has an empty encryption block:\n%s", data)
 	}
 }

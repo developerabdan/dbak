@@ -8,6 +8,9 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/developerabdan/dbak/internal/app"
+	"github.com/developerabdan/dbak/internal/encrypt"
 )
 
 var namePattern = regexp.MustCompile(`^[A-Za-z0-9_]+$`)
@@ -59,6 +62,7 @@ func (c *Config) Validate() error {
 	v.schedule(c.Schedule)
 	v.retention("retention", c.Retention)
 	v.notify(c.Notify)
+	v.encryption(c.Encryption)
 	if len(v.problems) == 0 {
 		return nil
 	}
@@ -210,6 +214,21 @@ func (v *validator) notify(n Notify) {
 	}
 	if n.TelegramTokenFile != "" {
 		v.absolutePath("notify.telegram_token_file", n.TelegramTokenFile)
+	}
+}
+
+func (v *validator) encryption(e Encryption) {
+	seen := map[string]bool{}
+	for i, recipient := range e.Recipients {
+		field := fmt.Sprintf("encryption.recipients[%d]", i)
+		if _, err := encrypt.ParseRecipient(recipient); err != nil {
+			v.add(field, "%s", app.Sentence(err.Error()))
+			continue
+		}
+		if seen[recipient] {
+			v.add(field, "The public key is in the list two times. Remove one.")
+		}
+		seen[recipient] = true
 	}
 }
 

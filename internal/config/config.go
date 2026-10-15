@@ -31,6 +31,15 @@ type Config struct {
 	Schedule    Schedule    `yaml:"schedule"`
 	Retention   Retention   `yaml:"retention"`
 	Notify      Notify      `yaml:"notify"`
+	Encryption  Encryption  `yaml:"encryption,omitempty"`
+}
+
+type Encryption struct {
+	Recipients []string `yaml:"recipients,omitempty"`
+}
+
+func (e Encryption) Enabled() bool {
+	return len(e.Recipients) > 0
 }
 
 type Source struct {
