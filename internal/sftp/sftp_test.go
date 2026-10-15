@@ -170,6 +170,10 @@ func TestUploadRenameAndRemove(t *testing.T) {
 	if err := client.Rename(partial, final); err != nil {
 		t.Fatal(err)
 	}
+	entries, err := client.ReadDir(dir)
+	if err != nil || len(entries) != 1 || entries[0].Name() != filepath.Base(final) {
+		t.Fatalf("got %v %v, want only the final file", entries, err)
+	}
 	got, err := os.ReadFile(final)
 	if err != nil {
 		t.Fatal(err)

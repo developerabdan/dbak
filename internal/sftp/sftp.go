@@ -140,6 +140,14 @@ func (c *Client) Open(path string) (io.ReadCloser, error) {
 	return file, nil
 }
 
+func (c *Client) ReadDir(dir string) ([]os.FileInfo, error) {
+	entries, err := c.sftp.ReadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("cannot read the directory %s: %w", dir, err)
+	}
+	return entries, nil
+}
+
 func (c *Client) Rename(oldPath, newPath string) error {
 	if _, ok := c.sftp.HasExtension("posix-rename@openssh.com"); ok {
 		if err := c.sftp.PosixRename(oldPath, newPath); err != nil {
