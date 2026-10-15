@@ -7,6 +7,9 @@ func TestSentence(t *testing.T) {
 		"the file is missing. Make it": "The file is missing. Make it.",
 		"Already a sentence.":          "Already a sentence.",
 		"":                             "",
+		"dbak init must run as root":   "dbak init must run as root.",
+		"pg_dump stopped with code 1":  "pg_dump stopped with code 1.",
+		"mysqldump: Got error: 1045":   "mysqldump: Got error: 1045.",
 	}
 	for in, want := range cases {
 		t.Run(in, func(t *testing.T) {
