@@ -26,28 +26,39 @@ func testEngine(t *testing.T) *MySQL {
 	})
 }
 
+var (
+	mysql8Client = engine.ClientInfo{Major: 8}
+	mariaClient  = engine.ClientInfo{Major: 10, MariaDB: true}
+)
+
 func TestDumpArgs(t *testing.T) {
 	cases := []struct {
 		name        string
 		server      engine.ServerInfo
-		clientMaria bool
+		client      engine.ClientInfo
 		wantGTID    bool
+		wantColumns bool
 	}{
-		{"mysql server without gtid", engine.ServerInfo{Flavor: engine.FlavorMySQL}, false, false},
-		{"mysql server with gtid", engine.ServerInfo{Flavor: engine.FlavorMySQL, GTIDEnabled: true}, false, true},
-		{"mysql server with gtid and mariadb client", engine.ServerInfo{Flavor: engine.FlavorMySQL, GTIDEnabled: true}, true, false},
-		{"mariadb server", engine.ServerInfo{Flavor: engine.FlavorMariaDB, GTIDEnabled: true}, false, false},
+		{"mysql server without gtid", engine.ServerInfo{Flavor: engine.FlavorMySQL}, mysql8Client, false, false},
+		{"mysql server with gtid", engine.ServerInfo{Flavor: engine.FlavorMySQL, GTIDEnabled: true}, mysql8Client, true, false},
+		{"mysql server with gtid and mariadb client", engine.ServerInfo{Flavor: engine.FlavorMySQL, GTIDEnabled: true}, mariaClient, false, false},
+		{"mariadb server and mariadb client", engine.ServerInfo{Flavor: engine.FlavorMariaDB, GTIDEnabled: true}, mariaClient, false, false},
+		{"mariadb server and mysql 8 client", engine.ServerInfo{Flavor: engine.FlavorMariaDB}, mysql8Client, false, true},
+		{"mariadb server and mysql 5.7 client", engine.ServerInfo{Flavor: engine.FlavorMariaDB}, engine.ClientInfo{Major: 5}, false, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			m := testEngine(t)
 			m.server = c.server
-			args := m.dumpArgs("/tmp/x.cnf", "app_prod", c.clientMaria)
+			args := m.dumpArgs("/tmp/x.cnf", "app_prod", c.client)
 			if args[0] != "--defaults-extra-file=/tmp/x.cnf" {
 				t.Fatalf("got first argument %s, want the option file", args[0])
 			}
 			if got := slices.Contains(args, "--set-gtid-purged=OFF"); got != c.wantGTID {
 				t.Fatalf("got gtid flag %v, want %v", got, c.wantGTID)
+			}
+			if got := slices.Contains(args, "--column-statistics=0"); got != c.wantColumns {
+				t.Fatalf("got column statistics flag %v, want %v", got, c.wantColumns)
 			}
 			if !slices.Equal(args[len(args)-2:], []string{"--databases", "app_prod"}) {
 				t.Fatalf("got %v, want --databases app_prod at the end", args)

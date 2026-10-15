@@ -25,10 +25,10 @@ const DefaultBinary = "mysqldump"
 const zstdLevel = 3
 
 type MySQL struct {
-	opts        engine.Options
-	server      engine.ServerInfo
-	clientOnce  sync.Once
-	clientMaria bool
+	opts       engine.Options
+	server     engine.ServerInfo
+	clientOnce sync.Once
+	client     engine.ClientInfo
 }
 
 func New(opts engine.Options) *MySQL {
@@ -152,17 +152,17 @@ func (m *MySQL) dumpCommand(ctx context.Context, database string, extra ...strin
 			return nil, err
 		}
 	}
-	clientMaria := m.clientIsMariaDB(ctx)
-	optionFile, err := engine.WriteSecretFile(m.opts.TempDir, "my-*.cnf", m.optionFile(clientMaria))
+	client := m.clientInfo(ctx)
+	optionFile, err := engine.WriteSecretFile(m.opts.TempDir, "my-*.cnf", m.optionFile(client.MariaDB))
 	if err != nil {
 		return nil, fmt.Errorf("cannot write a temporary option file in %s: %w. Make sure that the dbak user can write to the directory", m.opts.TempDir, err)
 	}
-	cmd := exec.CommandContext(ctx, m.opts.Binary, m.dumpArgs(optionFile, database, clientMaria, extra...)...)
+	cmd := exec.CommandContext(ctx, m.opts.Binary, m.dumpArgs(optionFile, database, client, extra...)...)
 	cmd.Env = engine.EnvWithout(os.Environ(), "MYSQL_PWD")
 	return engine.NewDump(cmd, engine.RemoveFile(optionFile)), nil
 }
 
-func (m *MySQL) dumpArgs(optionFile, database string, clientMaria bool, extra ...string) []string {
+func (m *MySQL) dumpArgs(optionFile, database string, client engine.ClientInfo, extra ...string) []string {
 	args := []string{
 		"--defaults-extra-file=" + optionFile,
 		"--single-transaction",
@@ -172,8 +172,11 @@ func (m *MySQL) dumpArgs(optionFile, database string, clientMaria bool, extra ..
 		"--events",
 		"--no-tablespaces",
 	}
-	if m.server.Flavor == engine.FlavorMySQL && m.server.GTIDEnabled && !clientMaria {
+	if m.server.Flavor == engine.FlavorMySQL && m.server.GTIDEnabled && !client.MariaDB {
 		args = append(args, "--set-gtid-purged=OFF")
+	}
+	if m.server.Flavor == engine.FlavorMariaDB && !client.MariaDB && client.Major >= 8 {
+		args = append(args, "--column-statistics=0")
 	}
 	args = append(args, extra...)
 	return append(args, "--databases", database)
@@ -213,14 +216,14 @@ func quoteOption(value string) string {
 	return `"` + replacer.Replace(value) + `"`
 }
 
-func (m *MySQL) clientIsMariaDB(ctx context.Context) bool {
+func (m *MySQL) clientInfo(ctx context.Context) engine.ClientInfo {
 	m.clientOnce.Do(func() {
 		out, err := exec.CommandContext(ctx, m.opts.Binary, "--version").Output()
 		if err == nil {
-			m.clientMaria = IsMariaDBClient(string(out))
+			m.client = ParseClientVersion(strings.TrimSpace(string(out)))
 		}
 	})
-	return m.clientMaria
+	return m.client
 }
 
 func IsMariaDBClient(versionOutput string) bool {

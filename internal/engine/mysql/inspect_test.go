@@ -77,7 +77,7 @@ func TestSplitAccount(t *testing.T) {
 
 func TestSchemaCheckArgs(t *testing.T) {
 	m := testEngine(t)
-	args := m.dumpArgs("/tmp/x.cnf", "app_prod", false, "--no-data")
+	args := m.dumpArgs("/tmp/x.cnf", "app_prod", mysql8Client, "--no-data")
 	if !slices.Contains(args, "--no-data") || strings.Join(args[len(args)-2:], " ") != "--databases app_prod" {
 		t.Fatalf("got %v", args)
 	}
