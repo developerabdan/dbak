@@ -80,10 +80,10 @@ func (s *session) timezoneWarning() {
 		return
 	}
 	server := s.env.Timezone
-	if sc.Timezone == server && server != "UTC" {
+	if sc.Timezone == server && !isUTC(server) {
 		return
 	}
-	if sc.Timezone == server {
+	if sc.Timezone == server || (isUTC(sc.Timezone) && isUTC(server)) {
 		s.env.UI.Warn(fmt.Sprintf("This server uses UTC. The backup starts at %s UTC. Make sure that this is the correct time.", sc.Time))
 		return
 	}
@@ -207,4 +207,12 @@ func optionalURL(value string) error {
 		return errors.New("type a URL that starts with http:// or https://")
 	}
 	return nil
+}
+
+func isUTC(zone string) bool {
+	switch zone {
+	case "UTC", "Etc/UTC", "Etc/Universal", "Universal", "Etc/Zulu", "Zulu", "Etc/GMT", "GMT":
+		return true
+	}
+	return false
 }

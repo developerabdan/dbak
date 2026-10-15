@@ -497,3 +497,16 @@ func TestHumanSize(t *testing.T) {
 		}
 	}
 }
+
+func TestTimezoneWarningForUTCServer(t *testing.T) {
+	h := newHarness(t)
+	h.ui = newFakeUI(t)
+	h.env.UI = h.ui
+	h.env.Timezone = "Etc/UTC"
+	s := newSession(h.env)
+	s.cfg.Schedule.Timezone = "UTC"
+	s.timezoneWarning()
+	if !strings.Contains(h.ui.out.String(), "This server uses UTC") {
+		t.Fatalf("got %q", h.ui.out.String())
+	}
+}
