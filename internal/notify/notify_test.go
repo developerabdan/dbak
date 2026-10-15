@@ -257,3 +257,32 @@ func TestDatabaseLabel(t *testing.T) {
 		})
 	}
 }
+
+func TestNotifierTest(t *testing.T) {
+	rec, server := newServer(t)
+	var logs bytes.Buffer
+	n := newNotifier(config.Notify{When: config.NotifyNever, WebhookURL: server.URL + "/hook", TelegramChatID: "-1001", HealthcheckURL: server.URL + "/ping"}, "123:SECRET", &logs)
+	n.TelegramAPI = server.URL
+	results := n.Test(context.Background(), "vm-app-01", time.Date(2026, 10, 15, 19, 0, 0, 500, time.UTC))
+	if len(results) != 2 || results[0].Target != "Webhook" || results[1].Target != "Telegram" || results[0].Err != nil || results[1].Err != nil {
+		t.Fatalf("got %+v", results)
+	}
+	if len(rec.requests) != 2 {
+		t.Fatalf("got %d requests, want 2 without the healthcheck", len(rec.requests))
+	}
+	want := `{"tool":"dbak","host":"vm-app-01","status":"test","started_at":"2026-10-15T19:00:00Z","finished_at":"2026-10-15T19:00:00Z","databases":[]}`
+	if rec.requests[0].Body != want {
+		t.Fatalf("got body %s", rec.requests[0].Body)
+	}
+	if !strings.Contains(rec.requests[1].Body, "This is a test message from dbak on vm-app-01.") {
+		t.Fatalf("got Telegram body %s", rec.requests[1].Body)
+	}
+}
+
+func TestNotifierTestWithoutTargets(t *testing.T) {
+	var logs bytes.Buffer
+	n := newNotifier(config.Notify{When: config.NotifyFailure}, "", &logs)
+	if results := n.Test(context.Background(), "vm-app-01", time.Now()); len(results) != 0 {
+		t.Fatalf("got %+v", results)
+	}
+}

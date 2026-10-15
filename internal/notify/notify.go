@@ -253,6 +253,29 @@ func truncate(text string, limit int) string {
 	return string(runes[:limit]) + "..."
 }
 
+const StatusTest = "test"
+
+type TestResult struct {
+	Target string
+	Err    error
+}
+
+func (n *Notifier) Test(ctx context.Context, host string, now time.Time) []TestResult {
+	var results []TestResult
+	if n.Config.WebhookURL != "" {
+		at := now.UTC().Truncate(time.Second)
+		body, err := json.Marshal(Payload{Tool: app.Name, Host: host, Status: StatusTest, StartedAt: at, FinishedAt: at, Databases: []Database{}})
+		if err == nil {
+			err = n.post(ctx, n.Config.WebhookURL, "application/json", body)
+		}
+		results = append(results, TestResult{Target: "Webhook", Err: err})
+	}
+	if n.Config.TelegramChatID != "" {
+		results = append(results, TestResult{Target: "Telegram", Err: n.SendTelegram(ctx, TelegramTestText(host))})
+	}
+	return results
+}
+
 func TelegramTestText(host string) string {
 	return fmt.Sprintf("This is a test message from dbak on %s. The Telegram notification works.", host)
 }
