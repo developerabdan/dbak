@@ -344,3 +344,44 @@ func TestResultSummary(t *testing.T) {
 		t.Fatalf("got %q, want %q", got, want)
 	}
 }
+
+func TestRemove(t *testing.T) {
+	t.Run("systemd", func(t *testing.T) {
+		inst, runner := newInstaller(t, true, "UTC")
+		if _, err := inst.Install(context.Background(), daily("02:00", "UTC")); err != nil {
+			t.Fatal(err)
+		}
+		runner.calls = nil
+		removed, err := inst.Remove(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(removed, []string{inst.Paths.TimerFile(), inst.Paths.ServiceFile()}) {
+			t.Fatalf("got removed %v", removed)
+		}
+		if !slices.Equal(runner.calls, []string{"systemctl disable --now dbak.timer", "systemctl daemon-reload"}) {
+			t.Fatalf("got calls %q", runner.calls)
+		}
+	})
+	t.Run("cron", func(t *testing.T) {
+		inst, runner := newInstaller(t, false, "UTC")
+		if _, err := inst.Install(context.Background(), daily("02:00", "UTC")); err != nil {
+			t.Fatal(err)
+		}
+		runner.calls = nil
+		removed, err := inst.Remove(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(removed, []string{inst.Paths.CronFile, inst.Paths.LogrotateFile}) || len(runner.calls) != 0 {
+			t.Fatalf("got removed %v and calls %q", removed, runner.calls)
+		}
+	})
+	t.Run("nothing installed", func(t *testing.T) {
+		inst, runner := newInstaller(t, true, "UTC")
+		removed, err := inst.Remove(context.Background())
+		if err != nil || len(removed) != 0 || len(runner.calls) != 0 {
+			t.Fatalf("got %v %v %q", removed, err, runner.calls)
+		}
+	})
+}

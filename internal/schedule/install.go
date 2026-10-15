@@ -444,3 +444,27 @@ func scanLines(path string, fn func(line string)) error {
 	}
 	return nil
 }
+
+func (i *Installer) Remove(ctx context.Context) ([]string, error) {
+	var removed []string
+	if _, err := os.Stat(i.Paths.TimerFile()); err == nil && i.Systemd {
+		if _, err := i.run(ctx, "systemctl", "disable", "--now", TimerName); err != nil {
+			return removed, err
+		}
+	}
+	for _, file := range []string{i.Paths.TimerFile(), i.Paths.ServiceFile(), i.Paths.CronFile, i.Paths.LogrotateFile} {
+		if _, err := os.Stat(file); err != nil {
+			continue
+		}
+		if err := removeIfPresent(file); err != nil {
+			return removed, err
+		}
+		removed = append(removed, file)
+	}
+	if i.Systemd && len(removed) > 0 {
+		if _, err := i.run(ctx, "systemctl", "daemon-reload"); err != nil {
+			return removed, err
+		}
+	}
+	return removed, nil
+}
