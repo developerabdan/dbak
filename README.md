@@ -38,10 +38,16 @@ the backups to an SFTP server.
 
 - Linux on `amd64` or `arm64`.
 - systemd, or cron if the system has no systemd.
-- PostgreSQL, MySQL 5.7 or newer, or MariaDB. The tests use PostgreSQL 13
-  and 16, MySQL 8.0, and MariaDB 10.11.
+- PostgreSQL, MySQL 5.7 or newer, or MariaDB. The tests use PostgreSQL 13,
+  16, 17, and 18, MySQL 8.0, and MariaDB 10.11.
 - `pg_dump` with the same major version as the server or a newer version, or
   `mysqldump`. `dbak init` can install the client tools for you.
+- If the PostgreSQL server is newer than the `pg_dump` of the system, `dbak
+  init` shows the commands that install a newer client from the PGDG
+  repository. For example, Ubuntu 24.04 has `pg_dump` 16, and a PostgreSQL 17
+  server needs `pg_dump` 17 or newer. One `pg_dump` 18 can make backups of all
+  servers from PostgreSQL 13 to 18. To use a different `pg_dump` for one
+  source, set `bin_dir`.
 - An SFTP server that accepts SSH keys. Password authentication is not
   supported.
 - Root access for the install and for `dbak init`. The backups run as the
@@ -396,7 +402,7 @@ The integration tests need Docker and the client tools:
 
 ```sh
 docker compose -f docker-compose.test.yml -p dbaktest up -d
-DBAK_IT_PG_BIN=/path/to/postgresql/bin \
+DBAK_IT_PG_BIN=/path/to/postgresql-18/bin \
 DBAK_IT_MYSQL_BIN=/path/to/mysql/bin \
 DBAK_IT_MARIADB_BIN=/path/to/mariadb/bin \
 go test -tags integration ./internal/engine/ ./internal/backup/
