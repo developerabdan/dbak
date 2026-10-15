@@ -90,6 +90,7 @@ prepare() {
 		set -e
 		id dbak >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin dbak
 		chown -R dbak:dbak /etc/dbak /var/lib/dbak
+		chmod 0750 /var/lib/dbak
 		chmod 0700 /etc/dbak/secrets
 		chmod 0600 /etc/dbak/config.yaml /etc/dbak/secrets/*
 	'
@@ -139,6 +140,35 @@ docker exec dbaktest-sftp-1 sh -c 'ls /home/dbak/upload/vm-e2e-systemd/app_prod/
 docker exec "$systemd_container" sh -c 'sed -i "s/frequency: daily/frequency: every_n_hours/; s/time: \"02:00\"/every_hours: 6/" /etc/dbak/config.yaml'
 docker exec "$systemd_container" dbak schedule
 docker exec "$systemd_container" grep -qx "OnCalendar=\*-\*-\* 00/6:00:00 Asia/Jakarta" /etc/systemd/system/dbak.timer || fail "every_n_hours OnCalendar"
+
+echo "== status, list, doctor, uninstall =="
+out="$(docker exec "$systemd_container" dbak status)"
+echo "$out"
+grep -Eq "^app_prod +success " <<<"$out" || fail "status table"
+grep -q "Next backup:  .* (systemd)" <<<"$out" || fail "status next backup"
+docker exec "$systemd_container" dbak status --json | grep -q '"scheduler": "systemd"' || fail "status JSON"
+out="$(docker exec "$systemd_container" dbak list)"
+echo "$out"
+grep -Eq "^app_prod +.*/upload/vm-e2e-systemd/app_prod/app_prod_[0-9]{8}T[0-9]{6}Z\.dump$" <<<"$out" || fail "list output"
+out="$(docker exec "$systemd_container" dbak doctor)" || {
+	echo "$out"
+	fail "dbak doctor found a failure"
+}
+echo "$out"
+grep -q "^OK    SFTP: " <<<"$out" || fail "doctor SFTP"
+grep -q "^OK    Schedule: " <<<"$out" || fail "doctor schedule"
+docker exec "$systemd_container" chmod 0644 /etc/dbak/secrets/db_password
+out="$(docker exec "$systemd_container" dbak doctor)" && fail "dbak doctor did not find the mode problem"
+grep -q "Run: sudo chmod 0600 /etc/dbak/secrets/db_password" <<<"$out" || fail "doctor fix text"
+docker exec "$systemd_container" chmod 0600 /etc/dbak/secrets/db_password
+printf 'n\n' | docker exec -i "$systemd_container" dbak uninstall | grep -q "Nothing changed" || fail "uninstall did not stop"
+docker exec "$systemd_container" test -f /etc/systemd/system/dbak.timer || fail "uninstall changed files after No"
+printf 'y\ny\n' | docker exec -i "$systemd_container" dbak uninstall
+for gone in /etc/systemd/system/dbak.timer /etc/systemd/system/dbak.service /usr/local/bin/dbak /etc/dbak /var/lib/dbak/state.json; do
+	docker exec "$systemd_container" test ! -e "$gone" || fail "$gone still exists after uninstall"
+done
+docker exec "$systemd_container" systemctl list-timers --all --no-pager | grep -q dbak && fail "the timer is still loaded"
+docker exec dbaktest-sftp-1 sh -c 'ls /home/dbak/upload/vm-e2e-systemd/app_prod/' | grep -q '\.dump$' || fail "uninstall removed the remote backups"
 
 echo "== cron without CRON_TZ =="
 docker run -d --name "$cron_container" --hostname vm-e2e-cron --network dbaktest_default --entrypoint sleep "$image" infinity >/dev/null
