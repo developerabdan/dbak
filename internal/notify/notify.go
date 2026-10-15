@@ -56,6 +56,7 @@ type Payload struct {
 }
 
 type Database struct {
+	Source     string `json:"source,omitempty"`
 	Name       string `json:"name"`
 	Status     string `json:"status"`
 	SizeBytes  int64  `json:"size_bytes,omitempty"`
@@ -74,6 +75,7 @@ func NewPayload(run state.Run) Payload {
 	}
 	for _, db := range run.Databases {
 		p.Databases = append(p.Databases, Database{
+			Source:     db.Source,
 			Name:       db.Name,
 			Status:     db.Status,
 			SizeBytes:  db.SizeBytes,
@@ -216,13 +218,21 @@ func TelegramText(run state.Run) string {
 	fmt.Fprintf(&b, "dbak on %s: %s\n", run.Host, statusText(run.Status))
 	fmt.Fprintf(&b, "Started: %s\n", run.StartedAt.UTC().Format("2006-01-02 15:04:05 UTC"))
 	for _, db := range run.Databases {
+		name := DatabaseLabel(db)
 		if db.Status == state.StatusSuccess {
-			fmt.Fprintf(&b, "\n%s: success, %s", db.Name, app.HumanSize(db.SizeBytes))
+			fmt.Fprintf(&b, "\n%s: success, %s", name, app.HumanSize(db.SizeBytes))
 			continue
 		}
-		fmt.Fprintf(&b, "\n%s: failure. %s", db.Name, truncate(db.Error, maxErrorLength))
+		fmt.Fprintf(&b, "\n%s: failure. %s", name, truncate(db.Error, maxErrorLength))
 	}
 	return b.String()
+}
+
+func DatabaseLabel(db state.Database) string {
+	if db.Source == "" {
+		return db.Name
+	}
+	return db.Source + "/" + db.Name
 }
 
 func statusText(status string) string {

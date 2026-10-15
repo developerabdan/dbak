@@ -71,11 +71,11 @@ func sampleRun(status string) state.Run {
 		StartedAt:  time.Date(2026, 10, 15, 19, 0, 0, 0, time.UTC),
 		FinishedAt: time.Date(2026, 10, 15, 19, 2, 13, 500, time.UTC),
 		Databases: []state.Database{
-			{Name: "app_prod", Status: state.StatusSuccess, SizeBytes: 104857600, RemotePath: "/backups/vm-app-01/app_prod/app_prod_20261015T190000Z.dump", Duration: time.Second},
+			{Source: "main_pg", Name: "app_prod", Status: state.StatusSuccess, SizeBytes: 104857600, RemotePath: "/backups/vm-app-01/main_pg/app_prod/app_prod_20261015T190000Z.dump", Duration: time.Second},
 		},
 	}
 	if status != state.StatusSuccess {
-		run.Databases = append(run.Databases, state.Database{Name: "app_audit", Status: state.StatusFailure, Error: "pg_dump: permission denied for table audit_log"})
+		run.Databases = append(run.Databases, state.Database{Source: "shop_mysql", Name: "app_audit", Status: state.StatusFailure, Error: "pg_dump: permission denied for table audit_log"})
 	}
 	return run
 }
@@ -89,8 +89,8 @@ func TestWebhookPayload(t *testing.T) {
 		t.Fatalf("got %+v", rec.requests)
 	}
 	want := `{"tool":"dbak","host":"vm-app-01","status":"partial","started_at":"2026-10-15T19:00:00Z","finished_at":"2026-10-15T19:02:13Z","databases":[` +
-		`{"name":"app_prod","status":"success","size_bytes":104857600,"remote_path":"/backups/vm-app-01/app_prod/app_prod_20261015T190000Z.dump"},` +
-		`{"name":"app_audit","status":"failure","error":"pg_dump: permission denied for table audit_log"}]}`
+		`{"source":"main_pg","name":"app_prod","status":"success","size_bytes":104857600,"remote_path":"/backups/vm-app-01/main_pg/app_prod/app_prod_20261015T190000Z.dump"},` +
+		`{"source":"shop_mysql","name":"app_audit","status":"failure","error":"pg_dump: permission denied for table audit_log"}]}`
 	if rec.requests[0].Body != want {
 		t.Fatalf("got body\n%s\nwant\n%s", rec.requests[0].Body, want)
 	}
@@ -136,7 +136,7 @@ func TestTelegram(t *testing.T) {
 	if err := json.Unmarshal([]byte(rec.requests[0].Body), &msg); err != nil {
 		t.Fatal(err)
 	}
-	if msg["chat_id"] != "-1001" || !strings.Contains(msg["text"], "app_prod: success, 100.0 MiB") {
+	if msg["chat_id"] != "-1001" || !strings.Contains(msg["text"], "main_pg/app_prod: success, 100.0 MiB") {
 		t.Fatalf("got %v", msg)
 	}
 }
@@ -145,7 +145,7 @@ func TestTelegramText(t *testing.T) {
 	run := sampleRun(state.StatusPartial)
 	run.Databases[1].Error = strings.Repeat("e", 300)
 	text := TelegramText(run)
-	want := "dbak on vm-app-01: The backup of some databases failed.\nStarted: 2026-10-15 19:00:00 UTC\n\napp_prod: success, 100.0 MiB\napp_audit: failure. " + strings.Repeat("e", 200) + "..."
+	want := "dbak on vm-app-01: The backup of some databases failed.\nStarted: 2026-10-15 19:00:00 UTC\n\nmain_pg/app_prod: success, 100.0 MiB\nshop_mysql/app_audit: failure. " + strings.Repeat("e", 200) + "..."
 	if text != want {
 		t.Fatalf("got\n%s\nwant\n%s", text, want)
 	}
@@ -237,5 +237,23 @@ func TestTelegramErrorDescription(t *testing.T) {
 	err := n.SendTelegram(context.Background(), "x")
 	if err == nil || err.Error() != "the server returned HTTP status 400: Bad Request: chat not found" {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestDatabaseLabel(t *testing.T) {
+	cases := []struct {
+		name string
+		db   state.Database
+		want string
+	}{
+		{"with a source", state.Database{Source: "main_pg", Name: "app_prod"}, "main_pg/app_prod"},
+		{"from an old run without a source", state.Database{Name: "app_prod"}, "app_prod"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := DatabaseLabel(c.db); got != c.want {
+				t.Fatalf("got %q, want %q", got, c.want)
+			}
+		})
 	}
 }

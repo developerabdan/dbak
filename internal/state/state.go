@@ -27,6 +27,7 @@ type Run struct {
 }
 
 type Database struct {
+	Source     string        `json:"source,omitempty"`
 	Name       string        `json:"name"`
 	Status     string        `json:"status"`
 	SizeBytes  int64         `json:"size_bytes,omitempty"`
