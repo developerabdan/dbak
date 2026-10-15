@@ -25,7 +25,7 @@ func newRootCommand() *cobra.Command {
 	root.PersistentFlags().StringVar(&opts.stateDir, "state-dir", app.StateDir, "Directory for the lock file, the run history, and temporary credential files.")
 	root.PersistentFlags().BoolP("help", "h", false, "Show the help for the command.")
 	root.CompletionOptions.DisableDefaultCmd = true
-	root.AddCommand(newInitCommand(opts), newRunCommand(opts), newScheduleCommand(opts), newStatusCommand(opts), newListCommand(opts), newUserHelperCommand(), newVersionCommand())
+	root.AddCommand(newInitCommand(opts), newRunCommand(opts), newScheduleCommand(opts), newStatusCommand(opts), newListCommand(opts), newDoctorCommand(opts), newUserHelperCommand(), newVersionCommand())
 	root.InitDefaultHelpCmd()
 	for _, cmd := range root.Commands() {
 		if cmd.Name() == "help" {

@@ -228,3 +228,24 @@ func (o Owner) MkdirAll(path string, mode os.FileMode) error {
 	}
 	return o.Apply(path, mode)
 }
+
+func ProcessRunning(names ...string) bool {
+	return processRunning("/proc", names...)
+}
+
+func processRunning(procDir string, names ...string) bool {
+	matches, _ := filepath.Glob(filepath.Join(procDir, "[0-9]*", "comm"))
+	for _, file := range matches {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			continue
+		}
+		name := strings.TrimSpace(string(data))
+		for _, want := range names {
+			if name == want {
+				return true
+			}
+		}
+	}
+	return false
+}

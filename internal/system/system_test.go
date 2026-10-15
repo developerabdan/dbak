@@ -121,3 +121,21 @@ func TestOwnerApplySetsMode(t *testing.T) {
 		t.Fatalf("got %v %v", info, err)
 	}
 }
+
+func TestProcessRunning(t *testing.T) {
+	proc := t.TempDir()
+	for pid, comm := range map[string]string{"1": "systemd\n", "42": "cron\n"} {
+		if err := os.MkdirAll(filepath.Join(proc, pid), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(proc, pid, "comm"), []byte(comm), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !processRunning(proc, "crond", "cron") {
+		t.Fatal("got false for cron")
+	}
+	if processRunning(proc, "crond") {
+		t.Fatal("got true for crond")
+	}
+}
