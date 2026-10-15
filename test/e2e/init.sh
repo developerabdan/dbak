@@ -27,7 +27,7 @@ fi
 (cd "$root" && CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -o "$work/dbak" ./cmd/dbak)
 
 printf '%s\n' '' '' '' postgres16 '' '' 'Te:st\pa"ss#1' 2 '' '' sftp '' dbak /upload 2 /tmp/id_ed25519 y \
-	'' '' Asia/Jakarta '' '' '' '' '' '' '' '' '' '' >"$work/answers.txt"
+	'' '' Asia/Jakarta '' '' '' '' 3 '' '' '' '' '' '' >"$work/answers.txt"
 
 docker create -i --name "$container" --hostname vm-e2e-01 --network dbaktest_default \
 	--entrypoint /usr/local/bin/dbak postgres:16 init >/dev/null
@@ -37,6 +37,7 @@ docker start -ai "$container" <"$work/answers.txt" | tee "$work/init.log"
 
 grep -q "OK: dbak saved the config in /etc/dbak/config.yaml." "$work/init.log"
 grep -q "OK: postgres/app_prod: " "$work/init.log"
+grep -q "Encryption:        off" "$work/init.log"
 grep -q "no schedule is installed. Correct the problem, then run: sudo dbak schedule" "$work/init.log"
 
 docker commit "$container" "$image" >/dev/null

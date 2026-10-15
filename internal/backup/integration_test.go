@@ -17,11 +17,13 @@ import (
 	"testing"
 	"time"
 
+	"filippo.io/age"
 	"github.com/klauspost/compress/zstd"
 
 	"github.com/developerabdan/dbak/internal/app"
 	"github.com/developerabdan/dbak/internal/backup"
 	"github.com/developerabdan/dbak/internal/config"
+	"github.com/developerabdan/dbak/internal/encrypt"
 	"github.com/developerabdan/dbak/internal/sftp"
 	"github.com/developerabdan/dbak/internal/state"
 )
@@ -412,5 +414,57 @@ func TestIntegrationOneSourceFailsGivesPartial(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), "dbak continues with the next source") {
 		t.Fatalf("the log does not show the failed source:\n%s", logs.String())
+	}
+}
+
+func TestIntegrationEncryptedBackups(t *testing.T) {
+	knownHosts := pinHostKey(t)
+	key, err := encrypt.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	all := targets()
+	pg, mysql := all[0], all[2]
+	opts := writeSources(t, knownHosts, sourceFor(t, pg), sourceFor(t, mysql))
+	cfg, err := config.Load(opts.ConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Encryption.Recipients = []string{key.Public}
+	if err := config.Save(opts.ConfigPath, cfg); err != nil {
+		t.Fatal(err)
+	}
+	waitForDatabase(t, opts)
+	var logs bytes.Buffer
+	opts.Logger = slog.New(slog.NewTextHandler(&logs, nil))
+	record, err := backup.RunJob(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("the run failed: %v\n%s", err, logs.String())
+	}
+	if !strings.Contains(logs.String(), "encrypted=true") {
+		t.Fatalf("the log does not show the encryption:\n%s", logs.String())
+	}
+	identity, err := age.ParseX25519Identity(key.Private)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, tg := range []target{pg, mysql} {
+		result := record.Databases[i]
+		if result.Status != state.StatusSuccess || !strings.HasSuffix(result.RemotePath, ".age") {
+			t.Fatalf("got result %+v", result)
+		}
+		sealed := readRemote(t, knownHosts, result.RemotePath)
+		if !bytes.HasPrefix(sealed, []byte("age-encryption.org/v1\n")) {
+			t.Fatalf("%s is not an age file", result.RemotePath)
+		}
+		r, err := age.Decrypt(bytes.NewReader(sealed), identity)
+		if err != nil {
+			t.Fatal(err)
+		}
+		plain, err := io.ReadAll(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tg.verify(t, plain)
 	}
 }
