@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -26,20 +27,30 @@ import (
 )
 
 func newInitCommand(opts *globalOptions) *cobra.Command {
-	return &cobra.Command{
+	var inputFile string
+	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Configure dbak with interactive questions.",
-		Long:  "Configure the database source, the SFTP destination, the schedule, the retention, and the notifications. You must run this command as root.",
-		Args:  cobra.NoArgs,
+		Long: "Configure the database source, the SFTP destination, the schedule, the retention, and the notifications. You must run this command as root.\n\n" +
+			"With --config, dbak init does not ask questions. It reads the file, examines the database and the SFTP server, saves the config in " + app.ConfigPath + ", and installs the schedule. " +
+			"Give the database password in DBAK_DB_PASSWORD and the Telegram bot token in DBAK_TELEGRAM_TOKEN, or put them in the files that the config names.",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 			if !system.IsRoot() {
 				return app.Exit(app.ExitGeneral, errors.New("dbak init must run as root. Run: sudo dbak init"))
 			}
+			secrets := onboard.Secrets{DBPassword: os.Getenv("DBAK_DB_PASSWORD"), TelegramToken: os.Getenv("DBAK_TELEGRAM_TOKEN")}
+			os.Unsetenv("DBAK_DB_PASSWORD")
+			os.Unsetenv("DBAK_TELEGRAM_TOKEN")
 			env, err := newInitEnv(opts)
 			if err != nil {
 				return app.Exit(app.ExitGeneral, err)
+			}
+			if inputFile != "" {
+				env.UI = onboard.NewPlainUI(strings.NewReader(""), cmd.OutOrStdout(), nil)
+				return onboard.RunFromFile(ctx, env, inputFile, secrets)
 			}
 			if err := onboard.Run(ctx, env); err != nil {
 				return app.Exit(app.ExitGeneral, err)
@@ -47,6 +58,8 @@ func newInitCommand(opts *globalOptions) *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&inputFile, "config", "", "Read the settings from this file and do not ask questions.")
+	return cmd
 }
 
 func newInitEnv(opts *globalOptions) (*onboard.Env, error) {
