@@ -1,7 +1,7 @@
 # Plan: backup encryption with age
 
-Status: draft. The user must confirm the decisions in the last section before
-the build starts.
+Status: accepted on 2026-10-15. The user accepted all recommendations in the
+last section.
 
 ## Goal
 
@@ -36,7 +36,9 @@ Rules:
 
 - `encryption` is optional. If it is not in the config, or `recipients` is
   empty, dbak does not encrypt.
-- Each recipient is an age X25519 public key that starts with `age1`.
+- Each recipient is an age X25519 public key that starts with `age1`. dbak does
+  not accept the post-quantum hybrid keys (`age1pq1...`). The `age` tool in
+  many Linux distributions cannot decrypt files for these keys.
 - Each recipient can decrypt all backups.
 - `encryption` is global. It applies to all sources.
 - The config version stays 2. A config without `encryption` stays valid.
@@ -54,7 +56,7 @@ Encrypt the backups?
 
 ### Option A: dbak makes the key
 
-1. dbak makes an age key pair in memory.
+1. dbak makes an age X25519 key pair in memory.
 2. dbak shows the private key one time. It shows this warning: "Save this key
    in a password manager. Without this key, nobody can restore the backups."
 3. dbak asks the user to paste the private key back. The input is hidden.
@@ -170,11 +172,11 @@ each commit.
 7. **Documents and release.** Update README.md and SPEC.md, then release
    `v0.3.0`.
 
-## Decisions for the user
+## Decisions
 
-Confirm or change each item before the build starts.
+The user accepted these decisions on 2026-10-15.
 
-| ID | Question | Recommendation |
+| ID | Question | Decision |
 |---|---|---|
 | E1 | Can dbak add the dependency `filippo.io/age`? | Yes. It is the reference library of the age format. |
 | E2 | Can dbak update SPEC.md and move age encryption into the scope? | Yes. |
