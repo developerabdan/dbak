@@ -37,6 +37,7 @@ docker start -ai "$container" <"$work/answers.txt" | tee "$work/init.log"
 
 grep -q "OK: dbak saved the config in /etc/dbak/config.yaml." "$work/init.log"
 grep -q "OK: app_prod: " "$work/init.log"
+grep -q "no schedule is installed. Correct the problem, then run: sudo dbak schedule" "$work/init.log"
 
 docker commit "$container" "$image" >/dev/null
 docker run --rm --network dbaktest_default --entrypoint sh "$image" -c '
