@@ -54,6 +54,7 @@ func RunJob(ctx context.Context, opts JobOptions) (state.Run, error) {
 		return state.Run{}, app.Exit(app.ExitGeneral, err)
 	}
 	defer runLock.Release()
+	removeStaleCredentials(opts.StateDir, logger)
 
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -79,6 +80,16 @@ func RunJob(ctx context.Context, opts JobOptions) (state.Run, error) {
 		return record, err
 	}
 	return record, runError(results)
+}
+
+func removeStaleCredentials(dir string, logger *slog.Logger) {
+	removed, err := RemoveStaleCredentials(dir, time.Now())
+	for _, file := range removed {
+		logger.Warn("dbak removed an old temporary credentials file. A previous run did not stop correctly.", "path", file)
+	}
+	if err != nil {
+		logger.Warn("Cannot remove an old temporary credentials file. Remove it manually.", "error", err.Error())
+	}
 }
 
 func newNotifier(cfg config.Notify, logger *slog.Logger) *notify.Notifier {
