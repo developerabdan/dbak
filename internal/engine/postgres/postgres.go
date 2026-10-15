@@ -6,13 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"os"
-	"os/exec"
 	"strconv"
 	"strings"
-	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"dbak/internal/engine"
@@ -44,24 +40,12 @@ func (p *Postgres) WrapOutput(w io.Writer) (io.WriteCloser, error) {
 }
 
 func (p *Postgres) Probe(ctx context.Context, database string) (engine.ServerInfo, error) {
-	cfg, err := pgx.ParseConfig(p.connString(database))
+	conn, err := p.connect(ctx, database)
 	if err != nil {
-		return engine.ServerInfo{}, fmt.Errorf("the PostgreSQL connection settings are not valid: %w", err)
-	}
-	cfg.User = p.opts.Username
-	cfg.Password = p.opts.Password
-	cfg.ConnectTimeout = 10 * time.Second
-	conn, err := pgx.ConnectConfig(ctx, cfg)
-	if err != nil {
-		return engine.ServerInfo{}, p.classify(err)
+		return engine.ServerInfo{}, err
 	}
 	defer conn.Close(context.Background())
-	var version string
-	var versionNum int
-	if err := conn.QueryRow(ctx, "SELECT current_setting('server_version'), current_setting('server_version_num')::int").Scan(&version, &versionNum); err != nil {
-		return engine.ServerInfo{}, fmt.Errorf("cannot read the PostgreSQL server version: %w", err)
-	}
-	return engine.ServerInfo{Flavor: engine.FlavorPostgres, Version: version, Major: versionNum / 10000}, nil
+	return serverInfo(ctx, conn)
 }
 
 func (p *Postgres) connString(database string) string {
@@ -102,16 +86,11 @@ func (p *Postgres) classify(err error) error {
 }
 
 func (p *Postgres) DumpCommand(ctx context.Context, database string) (*engine.Dump, error) {
-	passFile, err := engine.WriteSecretFile(p.opts.TempDir, "pgpass-*", p.pgpassLine())
+	cmd, cleanup, err := p.command(ctx, database)
 	if err != nil {
-		return nil, fmt.Errorf("cannot write a temporary password file in %s: %w. Make sure that the dbak user can write to the directory", p.opts.TempDir, err)
+		return nil, err
 	}
-	cmd := exec.CommandContext(ctx, p.opts.Binary, p.dumpArgs(database)...)
-	cmd.Env = append(engine.EnvWithout(os.Environ(), "PGPASSWORD", "PGPASSFILE", "PGSSLMODE"),
-		"PGPASSFILE="+passFile,
-		"PGSSLMODE="+p.opts.SSLMode,
-	)
-	return engine.NewDump(cmd, engine.RemoveFile(passFile)), nil
+	return engine.NewDump(cmd, cleanup), nil
 }
 
 func (p *Postgres) dumpArgs(database string) []string {

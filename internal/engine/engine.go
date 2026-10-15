@@ -183,3 +183,49 @@ func RunCheck(cmd *exec.Cmd) error {
 	}
 	return nil
 }
+
+type Inspector interface {
+	ProbeServer(ctx context.Context) (ServerInfo, error)
+	ListDatabases(ctx context.Context) ([]string, error)
+	ClientVersion(ctx context.Context) (ClientInfo, error)
+	SchemaCheck(ctx context.Context, database string) error
+	PrivilegeCheck(ctx context.Context, database string) (PrivilegeReport, error)
+}
+
+type Full interface {
+	Engine
+	Inspector
+}
+
+type ClientInfo struct {
+	Text    string
+	Major   int
+	MariaDB bool
+}
+
+type PrivilegeReport struct {
+	Problems []string
+	FixSQL   string
+}
+
+func (r PrivilegeReport) OK() bool {
+	return len(r.Problems) == 0
+}
+
+type ClientTooOldError struct {
+	Tool   string
+	Client int
+	Server int
+}
+
+func (e *ClientTooOldError) Error() string {
+	return fmt.Sprintf("%s version %d is older than the server version %d. Install the client tools for version %d", e.Tool, e.Client, e.Server, e.Server)
+}
+
+func ToolOutput(ctx context.Context, binary string, args ...string) (string, error) {
+	out, err := exec.CommandContext(ctx, binary, args...).Output()
+	if err != nil {
+		return "", fmt.Errorf("cannot run %s: %w. Make sure that the client tool is installed", binary, err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
