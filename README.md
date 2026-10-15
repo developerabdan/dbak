@@ -310,3 +310,7 @@ Releases page.
 
 To build a release locally without a publish, run
 `goreleaser release --snapshot --clean`.
+
+## License
+
+MIT license, see [LICENSE](LICENSE).
