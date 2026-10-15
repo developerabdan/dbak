@@ -32,7 +32,7 @@ func newDoctorCommand(opts *globalOptions) *cobra.Command {
 			results := doctor.Run(cmd.Context(), env)
 			printResults(cmd.OutOrStdout(), results)
 			if failed := doctor.Failed(results); failed > 0 {
-				return app.Exit(app.ExitGeneral, fmt.Errorf("%d checks failed. Do the fixes above, then run dbak doctor again", failed))
+				return app.Exit(app.ExitGeneral, fmt.Errorf("%s failed. Do the fixes above, then run dbak doctor again", count(failed, "check")))
 			}
 			return nil
 		},
