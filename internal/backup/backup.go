@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"dbak/internal/app"
@@ -134,7 +133,7 @@ func (r *Runner) stream(cmd *exec.Cmd, counter *countingWriter) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	stderr := &tailBuffer{limit: 4096}
+	stderr := engine.NewTailBuffer()
 	cmd.Stderr = stderr
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -153,7 +152,7 @@ func (r *Runner) stream(cmd *exec.Cmd, counter *countingWriter) (int64, error) {
 		return 0, copyErr
 	}
 	if waitErr != nil {
-		return 0, dumpFailure(tool, waitErr, stderr.LastLine())
+		return 0, engine.CommandError(tool, waitErr, stderr.LastLine())
 	}
 	if err := out.Close(); err != nil {
 		return 0, err
@@ -162,17 +161,6 @@ func (r *Runner) stream(cmd *exec.Cmd, counter *countingWriter) (int64, error) {
 		return 0, err
 	}
 	return counter.n, nil
-}
-
-func dumpFailure(tool string, waitErr error, lastLine string) error {
-	var exitErr *exec.ExitError
-	if errors.As(waitErr, &exitErr) && exitErr.ExitCode() >= 0 {
-		if lastLine == "" {
-			return fmt.Errorf("%s stopped with exit code %d. Examine the database server log", tool, exitErr.ExitCode())
-		}
-		return fmt.Errorf("%s stopped with exit code %d: %s", tool, exitErr.ExitCode(), lastLine)
-	}
-	return fmt.Errorf("%s stopped: %w", tool, waitErr)
 }
 
 func ExitCode(results []Result) int {
@@ -236,22 +224,4 @@ func (c *countingWriter) Write(p []byte) (int, error) {
 		return n, &uploadError{fmt.Errorf("the upload stopped: %w. Make sure that the SFTP server has free space and is reachable", err)}
 	}
 	return n, nil
-}
-
-type tailBuffer struct {
-	limit int
-	data  []byte
-}
-
-func (t *tailBuffer) Write(p []byte) (int, error) {
-	t.data = append(t.data, p...)
-	if len(t.data) > t.limit {
-		t.data = t.data[len(t.data)-t.limit:]
-	}
-	return len(p), nil
-}
-
-func (t *tailBuffer) LastLine() string {
-	lines := strings.Split(strings.TrimSpace(string(t.data)), "\n")
-	return strings.TrimSpace(lines[len(lines)-1])
 }

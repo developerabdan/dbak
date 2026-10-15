@@ -3,9 +3,11 @@ package engine
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -132,4 +134,52 @@ func (nopCloser) Close() error {
 
 func NopWriteCloser(w io.Writer) io.WriteCloser {
 	return nopCloser{w}
+}
+
+const tailLimit = 4096
+
+type TailBuffer struct {
+	data []byte
+}
+
+func NewTailBuffer() *TailBuffer {
+	return &TailBuffer{}
+}
+
+func (t *TailBuffer) Write(p []byte) (int, error) {
+	t.data = append(t.data, p...)
+	if len(t.data) > tailLimit {
+		t.data = t.data[len(t.data)-tailLimit:]
+	}
+	return len(p), nil
+}
+
+func (t *TailBuffer) LastLine() string {
+	lines := strings.Split(strings.TrimSpace(string(t.data)), "\n")
+	return strings.TrimSpace(lines[len(lines)-1])
+}
+
+func CommandError(tool string, waitErr error, lastLine string) error {
+	var exitErr *exec.ExitError
+	if errors.As(waitErr, &exitErr) && exitErr.ExitCode() >= 0 {
+		if lastLine == "" {
+			return fmt.Errorf("%s stopped with exit code %d. Examine the database server log", tool, exitErr.ExitCode())
+		}
+		return fmt.Errorf("%s stopped with exit code %d: %s", tool, exitErr.ExitCode(), lastLine)
+	}
+	return fmt.Errorf("%s stopped: %w", tool, waitErr)
+}
+
+func RunCheck(cmd *exec.Cmd) error {
+	stderr := NewTailBuffer()
+	cmd.Stdout = io.Discard
+	cmd.Stderr = stderr
+	tool := filepath.Base(cmd.Path)
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("cannot start %s: %w. Make sure that the client tool is installed", tool, err)
+	}
+	if err := cmd.Wait(); err != nil {
+		return CommandError(tool, err, stderr.LastLine())
+	}
+	return nil
 }
