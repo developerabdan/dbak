@@ -25,8 +25,6 @@ the backups to an SFTP server.
   removes the newest backup. It never touches files that it did not make.
 - **Notifications.** A webhook, Telegram, and a healthcheck ping in the style
   of healthchecks.io.
-- **Restore help.** `dbak restore` downloads a backup and shows the correct
-  restore command. It does not change your database.
 - **No secrets in logs.** Passwords and tokens are in files with mode 0600.
   They are not in logs, in process arguments, or in `config.yaml`.
 
@@ -98,7 +96,6 @@ To see the result, run `dbak status`.
 | `dbak run [--db NAME]` | Makes a backup now. The schedule uses this command. |
 | `dbak status [--json]` | Shows the last run of each database and the next scheduled run. |
 | `dbak list [--db NAME]` | Shows the backups on the SFTP server. |
-| `dbak restore --db NAME [--at TIME \| --latest] [--out DIR]` | Downloads a backup and shows the restore command. |
 | `dbak doctor` | Examines the config, the permissions, the tools, the connections, and the schedule. |
 | `dbak user-helper` | Shows the SQL that makes a read-only backup user. |
 | `dbak schedule [--show]` | Installs the schedule from the config again, or shows it. |
@@ -223,22 +220,6 @@ The time is in UTC, so the alphabetical order is also the time order.
 |---|---|---|
 | PostgreSQL | `.dump` | `pg_dump --format=custom` |
 | MySQL, MariaDB | `.sql.zst` | `mysqldump` output, compressed with zstd |
-
-## Restore
-
-`dbak restore` downloads a backup and shows the command. For PostgreSQL:
-
-```sh
-pg_restore --host H --port P --username <write_user> --dbname <target_db> --no-owner --clean --if-exists app_prod_20261015T190000Z.dump
-```
-
-For MySQL and MariaDB:
-
-```sh
-mysql --host H --port P --user <write_user> -p <target_db> < app_prod_20261015T190000Z.sql
-```
-
-The `backup_ro` user cannot do a restore. Use a user with write privileges.
 
 ## Files on the server
 
