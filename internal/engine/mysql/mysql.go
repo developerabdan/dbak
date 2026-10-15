@@ -51,7 +51,7 @@ func (m *MySQL) WrapOutput(w io.Writer) (io.WriteCloser, error) {
 	return zstd.NewWriter(w, zstd.WithEncoderLevel(zstd.EncoderLevelFromZstd(zstdLevel)))
 }
 
-func (m *MySQL) Probe(ctx context.Context, database string) (engine.ServerInfo, error) {
+func (m *MySQL) open(database string) (*sql.DB, error) {
 	cfg := driver.NewConfig()
 	cfg.User = m.opts.Username
 	cfg.Passwd = m.opts.Password
@@ -62,9 +62,16 @@ func (m *MySQL) Probe(ctx context.Context, database string) (engine.ServerInfo, 
 	cfg.TLSConfig = driverTLS(m.opts.SSLMode)
 	connector, err := driver.NewConnector(cfg)
 	if err != nil {
-		return engine.ServerInfo{}, fmt.Errorf("the MySQL connection settings are not valid: %w", err)
+		return nil, fmt.Errorf("the MySQL connection settings are not valid: %w", err)
 	}
-	db := sql.OpenDB(connector)
+	return sql.OpenDB(connector), nil
+}
+
+func (m *MySQL) Probe(ctx context.Context, database string) (engine.ServerInfo, error) {
+	db, err := m.open(database)
+	if err != nil {
+		return engine.ServerInfo{}, err
+	}
 	defer db.Close()
 	var version string
 	if err := db.QueryRowContext(ctx, "SELECT VERSION()").Scan(&version); err != nil {
@@ -136,17 +143,26 @@ func (m *MySQL) classify(err error) error {
 }
 
 func (m *MySQL) DumpCommand(ctx context.Context, database string) (*engine.Dump, error) {
+	return m.dumpCommand(ctx, database)
+}
+
+func (m *MySQL) dumpCommand(ctx context.Context, database string, extra ...string) (*engine.Dump, error) {
+	if m.server.Flavor == "" {
+		if _, err := m.Probe(ctx, ""); err != nil {
+			return nil, err
+		}
+	}
 	clientMaria := m.clientIsMariaDB(ctx)
 	optionFile, err := engine.WriteSecretFile(m.opts.TempDir, "my-*.cnf", m.optionFile(clientMaria))
 	if err != nil {
 		return nil, fmt.Errorf("cannot write a temporary option file in %s: %w. Make sure that the dbak user can write to the directory", m.opts.TempDir, err)
 	}
-	cmd := exec.CommandContext(ctx, m.opts.Binary, m.dumpArgs(optionFile, database, clientMaria)...)
+	cmd := exec.CommandContext(ctx, m.opts.Binary, m.dumpArgs(optionFile, database, clientMaria, extra...)...)
 	cmd.Env = engine.EnvWithout(os.Environ(), "MYSQL_PWD")
 	return engine.NewDump(cmd, engine.RemoveFile(optionFile)), nil
 }
 
-func (m *MySQL) dumpArgs(optionFile, database string, clientMaria bool) []string {
+func (m *MySQL) dumpArgs(optionFile, database string, clientMaria bool, extra ...string) []string {
 	args := []string{
 		"--defaults-extra-file=" + optionFile,
 		"--single-transaction",
@@ -159,6 +175,7 @@ func (m *MySQL) dumpArgs(optionFile, database string, clientMaria bool) []string
 	if m.server.Flavor == engine.FlavorMySQL && m.server.GTIDEnabled && !clientMaria {
 		args = append(args, "--set-gtid-purged=OFF")
 	}
+	args = append(args, extra...)
 	return append(args, "--databases", database)
 }
 

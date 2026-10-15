@@ -97,6 +97,7 @@ func TestDumpCommandUsesSecretFile(t *testing.T) {
 	t.Setenv("MYSQL_PWD", "leak")
 	m := testEngine(t)
 	m.opts.Binary = "/nonexistent/mysqldump"
+	m.server = engine.ServerInfo{Flavor: engine.FlavorMySQL}
 	dump, err := m.DumpCommand(context.Background(), "app_prod")
 	if err != nil {
 		t.Fatal(err)
@@ -190,5 +191,14 @@ func TestProbeUnreachableHost(t *testing.T) {
 	var connErr *engine.ConnectError
 	if !errors.As(err, &connErr) || !strings.Contains(err.Error(), "cannot connect") {
 		t.Fatalf("got %v, want a connect error", err)
+	}
+}
+
+func TestDumpCommandReadsServerInfoFirst(t *testing.T) {
+	m := New(engine.Options{Host: "127.0.0.1", Port: 1, Username: "u", Password: "p", SSLMode: "disabled", TempDir: t.TempDir()})
+	_, err := m.DumpCommand(context.Background(), "app_prod")
+	var connErr *engine.ConnectError
+	if !errors.As(err, &connErr) {
+		t.Fatalf("got %v, want a connect error before the dump", err)
 	}
 }
