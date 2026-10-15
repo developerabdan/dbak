@@ -1,6 +1,7 @@
 package onboard
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -12,8 +13,9 @@ import (
 )
 
 type TerminalUI struct {
-	in  io.Reader
-	out io.Writer
+	in         io.Reader
+	out        io.Writer
+	accessible bool
 
 	heading lipgloss.Style
 	success lipgloss.Style
@@ -21,24 +23,51 @@ type TerminalUI struct {
 	fail    lipgloss.Style
 }
 
-func NewTerminalUI(in io.Reader, out io.Writer) *TerminalUI {
+func NewTerminalUI(in io.Reader, out io.Writer, accessible bool) *TerminalUI {
 	renderer := lipgloss.NewRenderer(out)
+	if accessible {
+		in = &lineReader{r: bufio.NewReader(in)}
+	}
 	return &TerminalUI{
-		in:      in,
-		out:     out,
-		heading: renderer.NewStyle().Bold(true).Foreground(lipgloss.Color("12")).MarginTop(1),
-		success: renderer.NewStyle().Foreground(lipgloss.Color("10")),
-		warn:    renderer.NewStyle().Foreground(lipgloss.Color("11")),
-		fail:    renderer.NewStyle().Foreground(lipgloss.Color("9")),
+		in:         in,
+		out:        out,
+		accessible: accessible,
+		heading:    renderer.NewStyle().Bold(true).Foreground(lipgloss.Color("12")).MarginTop(1),
+		success:    renderer.NewStyle().Foreground(lipgloss.Color("10")),
+		warn:       renderer.NewStyle().Foreground(lipgloss.Color("11")),
+		fail:       renderer.NewStyle().Foreground(lipgloss.Color("9")),
 	}
 }
 
 func NewStdUI() *TerminalUI {
-	return NewTerminalUI(os.Stdin, os.Stdout)
+	return NewTerminalUI(os.Stdin, os.Stdout, os.Getenv("ACCESSIBLE") != "")
+}
+
+type lineReader struct {
+	r *bufio.Reader
+}
+
+func (l *lineReader) Read(p []byte) (int, error) {
+	n := 0
+	for n < len(p) {
+		b, err := l.r.ReadByte()
+		if err != nil {
+			if n > 0 {
+				return n, nil
+			}
+			return 0, err
+		}
+		p[n] = b
+		n++
+		if b == '\n' {
+			break
+		}
+	}
+	return n, nil
 }
 
 func (u *TerminalUI) run(field huh.Field) error {
-	err := huh.NewForm(huh.NewGroup(field)).WithInput(u.in).WithOutput(u.out).WithShowHelp(true).Run()
+	err := huh.NewForm(huh.NewGroup(field)).WithInput(u.in).WithOutput(u.out).WithShowHelp(true).WithAccessible(u.accessible).Run()
 	if errors.Is(err, huh.ErrUserAborted) {
 		return ErrAborted
 	}
