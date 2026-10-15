@@ -67,7 +67,7 @@ type Env struct {
 	RunBackup    func(ctx context.Context, source string) (state.Run, error)
 
 	InstallSchedule  func(ctx context.Context, sc config.Schedule) (schedule.Result, error)
-	SendTelegramTest func(ctx context.Context, token, chatID string) error
+	SendTelegramTest func(ctx context.Context, token, chatID string, threadID int) error
 	ClearScreen      func()
 }
 

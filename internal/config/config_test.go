@@ -136,6 +136,8 @@ func TestParseRejectsBadValues(t *testing.T) {
 		{"unknown notify mode", "when: failure", "when: sometimes", "notify.when"},
 		{"bad webhook url", "webhook_url: \"\"", "webhook_url: \"ftp://x\"", "notify.webhook_url"},
 		{"telegram chat without token", "telegram_chat_id: \"\"", "telegram_chat_id: \"123\"", "notify.telegram_chat_id"},
+		{"negative telegram topic", "healthcheck_url: \"\"", "healthcheck_url: \"\"\n  telegram_thread_id: -1", "notify.telegram_thread_id"},
+		{"telegram topic without chat", "healthcheck_url: \"\"", "healthcheck_url: \"\"\n  telegram_thread_id: 316", "notify.telegram_thread_id"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

@@ -286,3 +286,28 @@ func TestNotifierTestWithoutTargets(t *testing.T) {
 		t.Fatalf("got %+v", results)
 	}
 }
+
+func TestTelegramTopic(t *testing.T) {
+	cases := []struct {
+		name   string
+		thread int
+		want   string
+	}{
+		{"main chat", 0, `{"chat_id":"-1003749220292","text":"hello"}`},
+		{"forum topic", 316, `{"chat_id":"-1003749220292","message_thread_id":316,"text":"hello"}`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			rec, server := newServer(t)
+			var logs bytes.Buffer
+			n := newNotifier(config.Notify{TelegramChatID: "-1003749220292", TelegramThreadID: c.thread}, "123:SECRET", &logs)
+			n.TelegramAPI = server.URL
+			if err := n.SendTelegram(context.Background(), "hello"); err != nil {
+				t.Fatal(err)
+			}
+			if rec.requests[0].Body != c.want {
+				t.Fatalf("got %s, want %s", rec.requests[0].Body, c.want)
+			}
+		})
+	}
+}

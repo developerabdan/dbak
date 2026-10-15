@@ -136,7 +136,8 @@ func TestConfigureNotificationsCommand(t *testing.T) {
 		answer{match: "Webhook URL", value: ""},
 		answer{match: "Telegram?", value: true},
 		answer{match: "Telegram bot token", value: "456:NEW"},
-		answer{match: "Telegram chat ID", value: "-2002"},
+		answer{match: "Telegram chat ID", value: "-1003749220292"},
+		answer{match: "Telegram topic ID", value: "316"},
 		answer{match: "Healthcheck URL", value: "https://hc-ping.com/abc"},
 		answer{match: "Save this config?", value: true},
 	)
@@ -144,13 +145,16 @@ func TestConfigureNotificationsCommand(t *testing.T) {
 		t.Fatalf("unexpected error: %v\n%s", err, h.ui.out.String())
 	}
 	cfg := loadSaved(t, h)
-	if cfg.Notify.When != config.NotifyAlways || cfg.Notify.TelegramChatID != "-2002" || cfg.Notify.WebhookURL != "" || cfg.Notify.HealthcheckURL != "https://hc-ping.com/abc" {
+	if cfg.Notify.When != config.NotifyAlways || cfg.Notify.TelegramChatID != "-1003749220292" || cfg.Notify.TelegramThreadID != 316 || cfg.Notify.WebhookURL != "" || cfg.Notify.HealthcheckURL != "https://hc-ping.com/abc" {
 		t.Fatalf("got %+v", cfg.Notify)
 	}
 	assertSecret(t, cfg.Notify.TelegramTokenFile, "456:NEW")
 	assertSecret(t, cfg.Sources[0].PasswordFile, "s3cret")
-	if h.telegramSent[len(h.telegramSent)-1] != "456:NEW -2002" {
+	if h.telegramSent[len(h.telegramSent)-1] != "456:NEW -1003749220292 topic 316" {
 		t.Fatalf("got Telegram tests %v", h.telegramSent)
+	}
+	if !strings.Contains(h.ui.out.String(), "chat -1003749220292, topic 316, token ********") {
+		t.Fatalf("the summary does not show the topic:\n%s", h.ui.out.String())
 	}
 	if strings.Contains(h.ui.out.String(), "456:NEW") {
 		t.Fatal("the output contains the token")

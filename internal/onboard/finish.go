@@ -94,6 +94,9 @@ func describeTelegram(n config.Notify) string {
 	if n.TelegramChatID == "" {
 		return "not set"
 	}
+	if n.TelegramThreadID > 0 {
+		return fmt.Sprintf("chat %s, topic %d, token %s", n.TelegramChatID, n.TelegramThreadID, masked)
+	}
 	return "chat " + n.TelegramChatID + ", token " + masked
 }
 

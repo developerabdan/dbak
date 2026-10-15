@@ -232,6 +232,7 @@ encryption:
 | `schedule.weekday` | `Sun` to `Sat`. Only for `weekly`. |
 | `schedule.randomized_delay` | `0`, `5m`, or `15m`. |
 | `notify.when` | `failure`, `always`, or `never`. The healthcheck ping does not use this field. |
+| `notify.telegram_thread_id` | Optional. The topic ID (`message_thread_id`) in a Telegram forum group. Without it, the message goes to the main chat or to General. |
 | `encryption.recipients` | Optional. A list of age X25519 public keys that start with `age1`. If the list is empty, dbak does not encrypt. |
 
 The config does not contain secrets. Each secret is in a separate file that the
@@ -351,7 +352,13 @@ The `status` is `success`, `partial`, or `failure`. `dbak notify test` sends
 the status `test` with an empty `databases` list.
 
 Telegram gets a short text with the host, the status, and the databases, for
-example `main_pg/app_prod: success, 100.0 MiB`. For
+example `main_pg/app_prod: success, 100.0 MiB`.
+
+To send to a topic in a Telegram forum group, give the chat ID of the group and
+the topic ID. Send a message in the topic, then open
+`https://api.telegram.org/bot<TOKEN>/getUpdates`. In the result, `chat.id` is
+the chat ID, for example `-1003749220292`. `message_thread_id` is the topic ID,
+for example `316`. For
 the healthcheck, dbak sends a request to `<URL>/start` when a run starts. After
 a good run, it sends a request to `<URL>`. After a failure, it sends a request to
 `<URL>/fail`.

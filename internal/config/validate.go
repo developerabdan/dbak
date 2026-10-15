@@ -212,6 +212,12 @@ func (v *validator) notify(n Notify) {
 	if (n.TelegramTokenFile == "") != (n.TelegramChatID == "") {
 		v.add("notify.telegram_chat_id", "Telegram needs both telegram_token_file and telegram_chat_id. Set both or set neither.")
 	}
+	if n.TelegramThreadID < 0 {
+		v.add("notify.telegram_thread_id", "The value %d is less than zero. Use the message_thread_id of the topic, or remove the field.", n.TelegramThreadID)
+	}
+	if n.TelegramThreadID > 0 && n.TelegramChatID == "" {
+		v.add("notify.telegram_thread_id", "A topic needs a chat. Set telegram_chat_id, or remove the field.")
+	}
 	if n.TelegramTokenFile != "" {
 		v.absolutePath("notify.telegram_token_file", n.TelegramTokenFile)
 	}

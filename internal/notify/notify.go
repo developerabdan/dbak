@@ -142,7 +142,11 @@ func (n *Notifier) SendTelegram(ctx context.Context, text string) error {
 	if n.TelegramToken == "" {
 		return errors.New("the Telegram bot token is empty. Run dbak init and type the token")
 	}
-	body, err := json.Marshal(map[string]string{"chat_id": n.Config.TelegramChatID, "text": text})
+	message := map[string]any{"chat_id": n.Config.TelegramChatID, "text": text}
+	if n.Config.TelegramThreadID > 0 {
+		message["message_thread_id"] = n.Config.TelegramThreadID
+	}
+	body, err := json.Marshal(message)
 	if err != nil {
 		return err
 	}

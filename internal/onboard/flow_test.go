@@ -87,8 +87,12 @@ func newHarness(t *testing.T) *harness {
 				{Source: "postgres", Name: "app_prod", Status: state.StatusSuccess, SizeBytes: 2048, RemotePath: "/backups/vm-app-01/postgres/app_prod/app_prod_20261015T120000Z.dump"},
 			}}, nil
 		},
-		SendTelegramTest: func(_ context.Context, token, chatID string) error {
-			h.telegramSent = append(h.telegramSent, token+" "+chatID)
+		SendTelegramTest: func(_ context.Context, token, chatID string, threadID int) error {
+			sent := token + " " + chatID
+			if threadID > 0 {
+				sent += " topic " + strconv.Itoa(threadID)
+			}
+			h.telegramSent = append(h.telegramSent, sent)
 			if len(h.telegramErrs) > 0 {
 				err := h.telegramErrs[0]
 				h.telegramErrs = h.telegramErrs[1:]
@@ -187,6 +191,7 @@ func tailAnswers() []answer {
 		{match: "Telegram?", value: true},
 		{match: "Telegram bot token", value: "123:ABC"},
 		{match: "Telegram chat ID", value: "-1001"},
+		{match: "Telegram topic ID", value: ""},
 		{match: "Healthcheck URL", value: ""},
 		{match: "Save this config?", value: true},
 	}
@@ -522,9 +527,11 @@ func TestTelegramTestFailure(t *testing.T) {
 		answer{match: "Telegram?", value: true},
 		answer{match: "Telegram bot token", value: "123:ABC"},
 		answer{match: "Telegram chat ID", value: "-1"},
+		answer{match: "Telegram topic ID", value: "316"},
 		answer{match: "What do you want to do?", value: "retry"},
 		answer{match: "Telegram bot token", value: ""},
 		answer{match: "Telegram chat ID", value: "-2"},
+		answer{match: "Telegram topic ID", value: ""},
 		answer{match: "What do you want to do?", value: "skip"},
 		answer{match: "Healthcheck URL", value: ""},
 	)
@@ -534,10 +541,10 @@ func TestTelegramTestFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.ui.done()
-	if !slices.Equal(h.telegramSent, []string{"123:ABC -1", "123:ABC -2"}) {
+	if !slices.Equal(h.telegramSent, []string{"123:ABC -1 topic 316", "123:ABC -2"}) {
 		t.Fatalf("got Telegram tests %v", h.telegramSent)
 	}
-	if s.cfg.Notify.TelegramChatID != "" || s.cfg.Notify.TelegramTokenFile != "" || s.telegramToken != "" {
+	if s.cfg.Notify.TelegramChatID != "" || s.cfg.Notify.TelegramTokenFile != "" || s.cfg.Notify.TelegramThreadID != 0 || s.telegramToken != "" {
 		t.Fatalf("got Telegram settings after skip: %+v", s.cfg.Notify)
 	}
 	if !strings.Contains(h.ui.out.String(), "ERROR: The test message failed: The server returned HTTP status 400: Bad Request: chat not found.") {
@@ -606,5 +613,13 @@ func TestTimezoneWarningForUTCServer(t *testing.T) {
 	s.timezoneWarning()
 	if !strings.Contains(h.ui.out.String(), "This server uses UTC") {
 		t.Fatalf("got %q", h.ui.out.String())
+	}
+}
+
+func TestOptionalTopic(t *testing.T) {
+	for value, ok := range map[string]bool{"": true, "316": true, "0": false, "-5": false, "General": false} {
+		if err := optionalTopic(value); (err == nil) != ok {
+			t.Errorf("optionalTopic(%q) = %v", value, err)
+		}
 	}
 }

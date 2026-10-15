@@ -85,6 +85,7 @@ type Notify struct {
 	WebhookURL        string `yaml:"webhook_url"`
 	TelegramTokenFile string `yaml:"telegram_token_file"`
 	TelegramChatID    string `yaml:"telegram_chat_id"`
+	TelegramThreadID  int    `yaml:"telegram_thread_id,omitempty"`
 	HealthcheckURL    string `yaml:"healthcheck_url"`
 }
 

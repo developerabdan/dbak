@@ -216,15 +216,15 @@ func (s *session) configureTelegram(ctx context.Context) error {
 			return err
 		}
 		ui.Info("dbak sends a test message to the Telegram chat.")
-		err := s.env.SendTelegramTest(ctx, s.telegramToken, n.TelegramChatID)
+		err := s.env.SendTelegramTest(ctx, s.telegramToken, n.TelegramChatID, n.TelegramThreadID)
 		if err == nil {
 			ui.Success("dbak sent the test message. Make sure that it is in the Telegram chat.")
 			break
 		}
 		ui.Error("The test message failed: " + app.Sentence(err.Error()))
-		ui.Info("Make sure that the bot token is correct and that the bot is a member of the chat.")
+		ui.Info("Make sure that the bot token is correct and that the bot is a member of the chat. For a topic, make sure that the topic ID is correct.")
 		choice, err := ui.Select("What do you want to do?", "",
-			options("Type the token and the chat ID again", "retry", "Keep the values without a good test", "keep", "Do not use Telegram", "skip"), "retry")
+			options("Type the token, the chat ID, and the topic ID again", "retry", "Keep the values without a good test", "keep", "Do not use Telegram", "skip"), "retry")
 		if err != nil {
 			return err
 		}
@@ -238,6 +238,7 @@ func (s *session) configureTelegram(ctx context.Context) error {
 	}
 	if !use {
 		n.TelegramChatID, n.TelegramTokenFile, s.telegramToken = "", "", ""
+		n.TelegramThreadID = 0
 	}
 	return nil
 }
@@ -258,10 +259,31 @@ func (s *session) askTelegram() error {
 	if token != "" {
 		s.telegramToken = token
 	}
-	if n.TelegramChatID, err = ui.Input("Telegram chat ID", "", n.TelegramChatID, required); err != nil {
+	if n.TelegramChatID, err = ui.Input("Telegram chat ID", "For a group, the chat ID starts with -100.", n.TelegramChatID, required); err != nil {
 		return err
 	}
+	topic := ""
+	if n.TelegramThreadID > 0 {
+		topic = strconv.Itoa(n.TelegramThreadID)
+	}
+	topic, err = ui.Input("Telegram topic ID",
+		"For a topic in a forum group, type the message_thread_id of the topic. Leave the field empty to send to the main chat or to General.",
+		topic, optionalTopic)
+	if err != nil {
+		return err
+	}
+	n.TelegramThreadID, _ = strconv.Atoi(topic)
 	n.TelegramTokenFile = s.env.Paths.Secret(telegramFileName)
+	return nil
+}
+
+func optionalTopic(value string) error {
+	if value == "" {
+		return nil
+	}
+	if n, err := strconv.Atoi(value); err != nil || n <= 0 {
+		return errors.New("type a number larger than zero, or leave the field empty")
+	}
 	return nil
 }
 
