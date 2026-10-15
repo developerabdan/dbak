@@ -1,4 +1,4 @@
-package main
+package backup
 
 import (
 	"bytes"
@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"dbak/internal/app"
-	"dbak/internal/backup"
 	"dbak/internal/lock"
 	"dbak/internal/state"
 )
@@ -22,15 +21,15 @@ func discardLogger() *slog.Logger {
 
 func TestSelectDatabases(t *testing.T) {
 	configured := []string{"app_prod", "app_audit"}
-	all, err := selectDatabases(configured, "")
+	all, err := SelectDatabases(configured, "")
 	if err != nil || len(all) != 2 {
 		t.Fatalf("got %v %v", all, err)
 	}
-	one, err := selectDatabases(configured, "app_audit")
+	one, err := SelectDatabases(configured, "app_audit")
 	if err != nil || len(one) != 1 || one[0] != "app_audit" {
 		t.Fatalf("got %v %v", one, err)
 	}
-	if _, err := selectDatabases(configured, "other"); err == nil {
+	if _, err := SelectDatabases(configured, "other"); err == nil {
 		t.Fatal("got no error for a database that is not in the config")
 	}
 }
@@ -41,7 +40,7 @@ func TestRunWithInvalidConfigGivesExitCode2(t *testing.T) {
 	if err := os.WriteFile(path, []byte("version: 9\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	err := runBackup(context.Background(), &globalOptions{configPath: path, stateDir: dir}, "", discardLogger())
+	_, err := RunJob(context.Background(), JobOptions{ConfigPath: path, StateDir: dir, Logger: discardLogger()})
 	if app.ExitCode(err) != app.ExitConfigInvalid {
 		t.Fatalf("got exit code %d, want %d: %v", app.ExitCode(err), app.ExitConfigInvalid, err)
 	}
@@ -63,7 +62,7 @@ func TestRunWhileLockedGivesExitCode7(t *testing.T) {
 	}
 	defer held.Release()
 	var logs bytes.Buffer
-	err = runBackup(context.Background(), &globalOptions{configPath: path, stateDir: dir}, "", slog.New(slog.NewTextHandler(&logs, nil)))
+	_, err = RunJob(context.Background(), JobOptions{ConfigPath: path, StateDir: dir, Logger: slog.New(slog.NewTextHandler(&logs, nil))})
 	if app.ExitCode(err) != app.ExitLocked {
 		t.Fatalf("got exit code %d, want %d: %v", app.ExitCode(err), app.ExitLocked, err)
 	}
@@ -73,19 +72,13 @@ func TestRunWhileLockedGivesExitCode7(t *testing.T) {
 }
 
 func TestRunError(t *testing.T) {
-	ok := backup.Result{Database: state.Database{Status: state.StatusSuccess}}
-	bad := backup.Result{Database: state.Database{Status: state.StatusFailure}, FailureKind: backup.FailureDump}
-	if err := runError([]backup.Result{ok}); err != nil {
+	ok := Result{Database: state.Database{Status: state.StatusSuccess}}
+	bad := Result{Database: state.Database{Status: state.StatusFailure}, FailureKind: FailureDump}
+	if err := runError([]Result{ok}); err != nil {
 		t.Fatalf("got %v, want nil", err)
 	}
-	err := runError([]backup.Result{ok, bad})
+	err := runError([]Result{ok, bad})
 	if app.ExitCode(err) != app.ExitPartial || !strings.Contains(err.Error(), "1 of 2 databases") {
 		t.Fatalf("got %v", err)
-	}
-}
-
-func TestSentence(t *testing.T) {
-	if got := sentence("the file is missing. Make it"); got != "The file is missing. Make it." {
-		t.Fatalf("got %q", got)
 	}
 }

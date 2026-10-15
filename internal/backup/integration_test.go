@@ -1,6 +1,6 @@
 //go:build integration
 
-package main
+package backup_test
 
 import (
 	"bytes"
@@ -19,6 +19,7 @@ import (
 	"github.com/klauspost/compress/zstd"
 
 	"dbak/internal/app"
+	"dbak/internal/backup"
 	"dbak/internal/config"
 	"dbak/internal/sftp"
 	"dbak/internal/state"
@@ -49,7 +50,7 @@ func integrationDir(t *testing.T) string {
 	return dir
 }
 
-func writeConfig(t *testing.T, tg target, knownHosts string) *globalOptions {
+func writeConfig(t *testing.T, tg target, knownHosts string) backup.JobOptions {
 	t.Helper()
 	fixtures := integrationDir(t)
 	cfg := &config.Config{
@@ -81,7 +82,7 @@ func writeConfig(t *testing.T, tg target, knownHosts string) *globalOptions {
 	if err := config.Save(configPath, cfg); err != nil {
 		t.Fatal(err)
 	}
-	return &globalOptions{configPath: configPath, stateDir: dir}
+	return backup.JobOptions{ConfigPath: configPath, StateDir: dir, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
 }
 
 func pinHostKey(t *testing.T) string {
@@ -104,9 +105,9 @@ func usePath(t *testing.T, envName string) {
 	}
 }
 
-func waitForDatabase(t *testing.T, opts *globalOptions) {
+func waitForDatabase(t *testing.T, opts backup.JobOptions) {
 	t.Helper()
-	cfg, err := config.Load(opts.configPath)
+	cfg, err := config.Load(opts.ConfigPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +115,7 @@ func waitForDatabase(t *testing.T, opts *globalOptions) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	eng, err := newEngine(cfg.Source, password, opts.stateDir)
+	eng, err := backup.NewEngine(cfg.Source, password, opts.StateDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,14 +224,15 @@ func TestIntegrationBackupEndToEnd(t *testing.T) {
 			opts := writeConfig(t, tg, knownHosts)
 			waitForDatabase(t, opts)
 			var logs bytes.Buffer
-			err := runBackup(context.Background(), opts, "", slog.New(slog.NewTextHandler(&logs, nil)))
+			opts.Logger = slog.New(slog.NewTextHandler(&logs, nil))
+			_, err := backup.RunJob(context.Background(), opts)
 			if err != nil {
 				t.Fatalf("the run failed: %v\n%s", err, logs.String())
 			}
 			if strings.Contains(logs.String(), "Te:st") {
 				t.Fatal("the log contains the password")
 			}
-			history, err := state.Load(filepath.Join(opts.stateDir, app.StateFile))
+			history, err := state.Load(filepath.Join(opts.StateDir, app.StateFile))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -242,8 +244,8 @@ func TestIntegrationBackupEndToEnd(t *testing.T) {
 				t.Fatalf("unexpected remote path %s", result.RemotePath)
 			}
 			tg.verify(t, readRemote(t, knownHosts, result.RemotePath))
-			matches, _ := filepath.Glob(filepath.Join(opts.stateDir, "*pgpass*"))
-			cnfs, _ := filepath.Glob(filepath.Join(opts.stateDir, "my-*.cnf"))
+			matches, _ := filepath.Glob(filepath.Join(opts.StateDir, "*pgpass*"))
+			cnfs, _ := filepath.Glob(filepath.Join(opts.StateDir, "my-*.cnf"))
 			if len(matches)+len(cnfs) != 0 {
 				t.Fatalf("temporary credential files remain: %v %v", matches, cnfs)
 			}
@@ -257,11 +259,11 @@ func TestIntegrationMissingPrivilegeFailsWithoutFiles(t *testing.T) {
 	usePath(t, tg.binEnv)
 	opts := writeConfig(t, tg, knownHosts)
 	waitForDatabase(t, opts)
-	err := runBackup(context.Background(), opts, "", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	_, err := backup.RunJob(context.Background(), opts)
 	if app.ExitCode(err) != app.ExitDumpFailed {
 		t.Fatalf("got exit code %d, want %d: %v", app.ExitCode(err), app.ExitDumpFailed, err)
 	}
-	history, err := state.Load(filepath.Join(opts.stateDir, app.StateFile))
+	history, err := state.Load(filepath.Join(opts.StateDir, app.StateFile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -292,7 +294,7 @@ func TestIntegrationChangedHostKeyIsRejected(t *testing.T) {
 	usePath(t, tg.binEnv)
 	opts := writeConfig(t, tg, wrong)
 	waitForDatabase(t, opts)
-	err = runBackup(context.Background(), opts, "", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	_, err = backup.RunJob(context.Background(), opts)
 	if app.ExitCode(err) != app.ExitUploadFailed || !errors.Is(err, sftp.ErrHostKeyChanged) {
 		t.Fatalf("got %v with exit code %d, want a changed host key error", err, app.ExitCode(err))
 	}
