@@ -105,7 +105,7 @@ secrets, and installs the schedule. If a check fails, dbak changes nothing.
   `source.password_file`.
 - The Telegram bot token comes from `DBAK_TELEGRAM_TOKEN` or from
   `notify.telegram_token_file`.
-- `destination.private_key_file` must be an existing key without a
+- `destination.private_key_file` must be a key file that exists, without a
   passphrase.
 - `destination.known_hosts_file` must contain the host key of the SFTP server.
   Make it with `ssh-keyscan` and compare the fingerprint with the server.
