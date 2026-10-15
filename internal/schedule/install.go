@@ -83,7 +83,28 @@ type Result struct {
 	Plan       Plan
 	Expression string
 	Next       time.Time
+	Delay      time.Duration
 	Warnings   []string
+}
+
+func (r Result) Summary() string {
+	scheduler := "the systemd timer " + TimerName
+	if r.Mode == ModeCron {
+		scheduler = "the cron file"
+	}
+	text := fmt.Sprintf("dbak installed %s: %s.", scheduler, r.Plan.Describe())
+	if !r.Next.IsZero() {
+		text += " The next backup starts at " + FormatTime(r.Next.In(r.Plan.location()))
+		if r.Delay > 0 {
+			text += ", with a random delay of up to " + formatDelay(r.Delay)
+		}
+		text += "."
+	}
+	return text
+}
+
+func FormatTime(t time.Time) string {
+	return t.Format("Mon 2006-01-02 15:04 MST")
 }
 
 func (i *Installer) now() time.Time {
@@ -119,10 +140,14 @@ func (i *Installer) Install(ctx context.Context, sc config.Schedule) (Result, er
 	if err != nil {
 		return Result{}, fmt.Errorf("the random delay %q is not valid", sc.RandomizedDelay)
 	}
+	var res Result
 	if i.Systemd {
-		return i.installSystemd(ctx, plan, delay)
+		res, err = i.installSystemd(ctx, plan, delay)
+	} else {
+		res, err = i.installCron(ctx, plan, delay)
 	}
-	return i.installCron(ctx, plan, delay)
+	res.Delay = delay
+	return res, err
 }
 
 func (i *Installer) convert(plan Plan, reason string) (Plan, []string, error) {

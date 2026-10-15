@@ -332,3 +332,15 @@ func TestParseSystemdVersion(t *testing.T) {
 		t.Fatal("got ok for bad output")
 	}
 }
+
+func TestResultSummary(t *testing.T) {
+	inst, _ := newInstaller(t, true, "UTC")
+	res, err := inst.Install(context.Background(), withDelay(daily("02:00", "Asia/Jakarta"), "5m"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "dbak installed the systemd timer dbak.timer: daily at 02:00 Asia/Jakarta. The next backup starts at Fri 2026-10-16 02:00 WIB, with a random delay of up to 5m."
+	if got := res.Summary(); got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
