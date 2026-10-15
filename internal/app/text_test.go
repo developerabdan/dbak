@@ -20,3 +20,12 @@ func TestSentence(t *testing.T) {
 		})
 	}
 }
+
+func TestHumanSize(t *testing.T) {
+	cases := map[int64]string{0: "0 B", 1023: "1023 B", 2048: "2.0 KiB", 5 << 20: "5.0 MiB"}
+	for in, want := range cases {
+		if got := HumanSize(in); got != want {
+			t.Errorf("HumanSize(%d) = %q, want %q", in, got, want)
+		}
+	}
+}

@@ -162,24 +162,11 @@ func (s *session) offerBackup(ctx context.Context, title string) error {
 func showRun(ui UI, record state.Run) {
 	for _, db := range record.Databases {
 		if db.Status == state.StatusSuccess {
-			ui.Success(fmt.Sprintf("%s: %s in %s. File: %s", db.Name, humanSize(db.SizeBytes), db.Duration.Round(time.Millisecond), db.RemotePath))
+			ui.Success(fmt.Sprintf("%s: %s in %s. File: %s", db.Name, app.HumanSize(db.SizeBytes), db.Duration.Round(time.Millisecond), db.RemotePath))
 		} else {
 			ui.Error(fmt.Sprintf("%s: %s", db.Name, app.Sentence(db.Error)))
 		}
 	}
-}
-
-func humanSize(n int64) string {
-	const unit = 1024
-	if n < unit {
-		return fmt.Sprintf("%d B", n)
-	}
-	div, exp := int64(unit), 0
-	for m := n / unit; m >= unit; m /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
 }
 
 func (s *session) fixStateOwner() error {
