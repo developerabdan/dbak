@@ -33,8 +33,24 @@ func NewTerminalUI(in io.Reader, out io.Writer) *TerminalUI {
 	}
 }
 
-func NewStdUI() *TerminalUI {
-	return NewTerminalUI(os.Stdin, os.Stdout)
+func NewStdUI() UI {
+	terminal := isTerminal(os.Stdin)
+	if terminal && os.Getenv("ACCESSIBLE") == "" {
+		return NewTerminalUI(os.Stdin, os.Stdout)
+	}
+	var secret func(string) (string, error)
+	if terminal {
+		hidden := NewTerminalUI(os.Stdin, os.Stdout)
+		secret = func(title string) (string, error) { return hidden.Secret(title, "", nil) }
+	}
+	ui := NewPlainUI(os.Stdin, os.Stdout, secret)
+	ui.echo = !terminal
+	return ui
+}
+
+func isTerminal(f *os.File) bool {
+	info, err := f.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }
 
 func (u *TerminalUI) run(field huh.Field) error {
@@ -74,6 +90,9 @@ func (u *TerminalUI) Select(title, description string, opts []Option, value stri
 func (u *TerminalUI) MultiSelect(title, description string, opts []Option, values []string, validate func([]string) error) ([]string, error) {
 	if validate == nil {
 		validate = func([]string) error { return nil }
+	}
+	if description == "" {
+		description = "Push the space bar to select or clear an item. Push Enter to continue."
 	}
 	field := huh.NewMultiSelect[string]().Title(title).Description(description).
 		Options(huhOptions(opts, values)...).Value(&values).Validate(validate)

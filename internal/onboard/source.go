@@ -221,7 +221,7 @@ func (s *session) chooseDatabases(ctx context.Context) error {
 			}
 		}
 	}
-	chosen, err := s.env.UI.MultiSelect("Select the databases for backup.", "Push the space bar to select or clear a database.",
+	chosen, err := s.env.UI.MultiSelect("Select the databases for backup.", "",
 		sameOptions(all...), selected, func(v []string) error {
 			if len(v) == 0 {
 				return errors.New("select one or more databases")
