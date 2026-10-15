@@ -12,6 +12,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -297,5 +298,53 @@ func TestIntegrationChangedHostKeyIsRejected(t *testing.T) {
 	_, err = backup.RunJob(context.Background(), opts)
 	if app.ExitCode(err) != app.ExitUploadFailed || !errors.Is(err, sftp.ErrHostKeyChanged) {
 		t.Fatalf("got %v with exit code %d, want a changed host key error", err, app.ExitCode(err))
+	}
+}
+
+func TestIntegrationRetentionRemovesOldFiles(t *testing.T) {
+	knownHosts := pinHostKey(t)
+	hostname, err := os.Hostname()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tg := targets()[0]
+	usePath(t, tg.binEnv)
+	opts := writeConfig(t, tg, knownHosts)
+	waitForDatabase(t, opts)
+	cfg, err := config.Load(opts.ConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Destination.RemotePath = path.Join(sftpRemotePath, fmt.Sprintf("retention-%d", time.Now().UnixNano()))
+	cfg.Retention = config.Retention{Daily: 1}
+	if err := config.Save(opts.ConfigPath, cfg); err != nil {
+		t.Fatal(err)
+	}
+	dir := path.Join(cfg.Destination.RemotePath, hostname, "app_prod")
+	client := dialTestSFTP(t, knownHosts)
+	if err := client.MkdirAll(dir); err != nil {
+		t.Fatal(err)
+	}
+	seed := []string{"app_prod_20200101T000000Z.dump", "app_prod_20200102T000000Z.dump", "app_prod_20200103T000000Z.dump.partial", "notes.txt"}
+	for _, name := range seed {
+		w, err := client.Create(path.Join(dir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		w.Close()
+	}
+	client.Close()
+	var logs bytes.Buffer
+	opts.Logger = slog.New(slog.NewTextHandler(&logs, nil))
+	if _, err := backup.RunJob(context.Background(), opts); err != nil {
+		t.Fatalf("the run failed: %v\n%s", err, logs.String())
+	}
+	names := remoteNames(t, knownHosts, dir)
+	slices.Sort(names)
+	if len(names) != 2 || names[0] == seed[0] || !strings.HasSuffix(names[0], ".dump") || names[1] != "notes.txt" {
+		t.Fatalf("got remote files %v\n%s", names, logs.String())
+	}
+	if !strings.Contains(logs.String(), "Retention removed 3 old files of app_prod.") {
+		t.Fatalf("got logs:\n%s", logs.String())
 	}
 }

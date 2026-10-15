@@ -3,15 +3,23 @@ package backup
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/developerabdan/dbak/internal/app"
 	"github.com/developerabdan/dbak/internal/lock"
+	"github.com/developerabdan/dbak/internal/notify"
 	"github.com/developerabdan/dbak/internal/state"
 )
 
@@ -81,4 +89,70 @@ func TestRunError(t *testing.T) {
 	if app.ExitCode(err) != app.ExitPartial || !strings.Contains(err.Error(), "1 of 2 databases") {
 		t.Fatalf("got %v", err)
 	}
+}
+
+func TestEarlyFailureSendsNotifications(t *testing.T) {
+	var mu sync.Mutex
+	var paths []string
+	var payload notify.Payload
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		paths = append(paths, r.URL.Path)
+		if r.URL.Path == "/hook" {
+			json.NewDecoder(r.Body).Decode(&payload)
+		}
+	}))
+	defer server.Close()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	closedPort := listener.Addr().(*net.TCPAddr).Port
+	listener.Close()
+
+	dir := t.TempDir()
+	passwordFile := filepath.Join(dir, "db_password")
+	if err := os.WriteFile(passwordFile, []byte("test-password\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := strings.NewReplacer(
+		"host: 10.0.0.10", "host: 127.0.0.1",
+		"port: 5432", "port: "+strconv.Itoa(closedPort),
+		"/etc/dbak/secrets/db_password", passwordFile,
+		`webhook_url: ""`, `webhook_url: "`+server.URL+`/hook"`,
+		`healthcheck_url: ""`, `healthcheck_url: "`+server.URL+`/ping"`,
+	).Replace(readValidConfig(t))
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	record, err := RunJob(context.Background(), JobOptions{ConfigPath: path, StateDir: dir, Logger: discardLogger()})
+	if app.ExitCode(err) != app.ExitDatabase {
+		t.Fatalf("got exit code %d, want %d: %v", app.ExitCode(err), app.ExitDatabase, err)
+	}
+	if record.Status != state.StatusFailure || len(record.Databases) != 2 {
+		t.Fatalf("got record %+v", record)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if !slices.Equal(paths, []string{"/ping/start", "/ping/fail", "/hook"}) {
+		t.Fatalf("got requests %v", paths)
+	}
+	if payload.Status != state.StatusFailure || len(payload.Databases) != 2 || payload.Databases[0].Error == "" {
+		t.Fatalf("got payload %+v", payload)
+	}
+	saved, err := state.Load(filepath.Join(dir, app.StateFile))
+	if err != nil || len(saved.Runs) != 1 || saved.Runs[0].Status != state.StatusFailure {
+		t.Fatalf("got state %+v %v", saved, err)
+	}
+}
+
+func readValidConfig(t *testing.T) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("..", "..", "internal", "config", "testdata", "valid.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
 }
