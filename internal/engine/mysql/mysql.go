@@ -17,7 +17,7 @@ import (
 	driver "github.com/go-sql-driver/mysql"
 	"github.com/klauspost/compress/zstd"
 
-	"dbak/internal/engine"
+	"github.com/developerabdan/dbak/internal/engine"
 )
 
 const DefaultBinary = "mysqldump"

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"dbak/internal/config"
+	"github.com/developerabdan/dbak/internal/config"
 )
 
 const testPassword = "Abc123Abc123Abc123Abc123Abc123Ab"

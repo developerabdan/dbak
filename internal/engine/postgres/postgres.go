@@ -11,7 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"dbak/internal/engine"
+	"github.com/developerabdan/dbak/internal/engine"
 )
 
 const DefaultBinary = "pg_dump"

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"dbak/internal/config"
+	"github.com/developerabdan/dbak/internal/config"
 )
 
 var weekdayNames = []string{"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"}

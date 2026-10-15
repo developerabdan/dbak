@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"dbak/internal/engine"
+	"github.com/developerabdan/dbak/internal/engine"
 )
 
 var systemDatabases = []string{"information_schema", "performance_schema", "sys", "mysql"}

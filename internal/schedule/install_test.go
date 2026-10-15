@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"dbak/internal/config"
-	"dbak/internal/system"
+	"github.com/developerabdan/dbak/internal/config"
+	"github.com/developerabdan/dbak/internal/system"
 )
 
 type fakeRunner struct {

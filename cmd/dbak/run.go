@@ -8,7 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"dbak/internal/backup"
+	"github.com/developerabdan/dbak/internal/backup"
 )
 
 func newRunCommand(opts *globalOptions) *cobra.Command {

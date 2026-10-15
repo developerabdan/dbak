@@ -18,11 +18,11 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
-	"dbak/internal/app"
-	"dbak/internal/backup"
-	"dbak/internal/config"
-	"dbak/internal/sftp"
-	"dbak/internal/state"
+	"github.com/developerabdan/dbak/internal/app"
+	"github.com/developerabdan/dbak/internal/backup"
+	"github.com/developerabdan/dbak/internal/config"
+	"github.com/developerabdan/dbak/internal/sftp"
+	"github.com/developerabdan/dbak/internal/state"
 )
 
 const (

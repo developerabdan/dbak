@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"dbak/internal/app"
+	"github.com/developerabdan/dbak/internal/app"
 )
 
 type globalOptions struct {

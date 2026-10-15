@@ -14,14 +14,14 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
 
-	"dbak/internal/app"
-	"dbak/internal/backup"
-	"dbak/internal/config"
-	"dbak/internal/engine"
-	"dbak/internal/onboard"
-	"dbak/internal/sftp"
-	"dbak/internal/state"
-	"dbak/internal/system"
+	"github.com/developerabdan/dbak/internal/app"
+	"github.com/developerabdan/dbak/internal/backup"
+	"github.com/developerabdan/dbak/internal/config"
+	"github.com/developerabdan/dbak/internal/engine"
+	"github.com/developerabdan/dbak/internal/onboard"
+	"github.com/developerabdan/dbak/internal/sftp"
+	"github.com/developerabdan/dbak/internal/state"
+	"github.com/developerabdan/dbak/internal/system"
 )
 
 func newInitCommand(opts *globalOptions) *cobra.Command {

@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"dbak/internal/app"
-	"dbak/internal/config"
-	"dbak/internal/state"
+	"github.com/developerabdan/dbak/internal/app"
+	"github.com/developerabdan/dbak/internal/config"
+	"github.com/developerabdan/dbak/internal/state"
 )
 
 const masked = "********"

@@ -13,13 +13,13 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"dbak/internal/config"
-	"dbak/internal/engine"
-	"dbak/internal/schedule"
-	"dbak/internal/sftp"
-	"dbak/internal/sftp/sftptest"
-	"dbak/internal/state"
-	"dbak/internal/system"
+	"github.com/developerabdan/dbak/internal/config"
+	"github.com/developerabdan/dbak/internal/engine"
+	"github.com/developerabdan/dbak/internal/schedule"
+	"github.com/developerabdan/dbak/internal/sftp"
+	"github.com/developerabdan/dbak/internal/sftp/sftptest"
+	"github.com/developerabdan/dbak/internal/state"
+	"github.com/developerabdan/dbak/internal/system"
 )
 
 type harness struct {

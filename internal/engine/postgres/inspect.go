@@ -14,7 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"dbak/internal/engine"
+	"github.com/developerabdan/dbak/internal/engine"
 )
 
 var maintenanceDatabases = []string{"postgres", "template1"}

@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	"dbak/internal/config"
+	"github.com/developerabdan/dbak/internal/config"
 )
 
 const MaxRuns = 50

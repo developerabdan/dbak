@@ -6,7 +6,7 @@ import (
 	"slices"
 	"testing"
 
-	"dbak/internal/engine"
+	"github.com/developerabdan/dbak/internal/engine"
 )
 
 func TestParseClientVersion(t *testing.T) {

@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"time"
 
-	"dbak/internal/config"
-	"dbak/internal/schedule"
+	"github.com/developerabdan/dbak/internal/config"
+	"github.com/developerabdan/dbak/internal/schedule"
 )
 
 var weekdays = []string{"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"}

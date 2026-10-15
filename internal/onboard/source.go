@@ -8,12 +8,12 @@ import (
 	"strconv"
 	"strings"
 
-	"dbak/internal/app"
-	"dbak/internal/config"
-	"dbak/internal/engine"
-	"dbak/internal/engine/mysql"
-	"dbak/internal/engine/postgres"
-	"dbak/internal/system"
+	"github.com/developerabdan/dbak/internal/app"
+	"github.com/developerabdan/dbak/internal/config"
+	"github.com/developerabdan/dbak/internal/engine"
+	"github.com/developerabdan/dbak/internal/engine/mysql"
+	"github.com/developerabdan/dbak/internal/engine/postgres"
+	"github.com/developerabdan/dbak/internal/system"
 )
 
 var (

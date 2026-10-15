@@ -15,7 +15,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"dbak/internal/sftp/sftptest"
+	"github.com/developerabdan/dbak/internal/sftp/sftptest"
 )
 
 type fixture struct {

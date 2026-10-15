@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"dbak/internal/app"
-	"dbak/internal/lock"
-	"dbak/internal/state"
+	"github.com/developerabdan/dbak/internal/app"
+	"github.com/developerabdan/dbak/internal/lock"
+	"github.com/developerabdan/dbak/internal/state"
 )
 
 func discardLogger() *slog.Logger {

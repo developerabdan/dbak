@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 
-	"dbak/internal/config"
-	"dbak/internal/sqlhelper"
+	"github.com/developerabdan/dbak/internal/config"
+	"github.com/developerabdan/dbak/internal/sqlhelper"
 )
 
 type HelperResult struct {

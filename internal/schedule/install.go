@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"dbak/internal/app"
-	"dbak/internal/config"
-	"dbak/internal/system"
+	"github.com/developerabdan/dbak/internal/app"
+	"github.com/developerabdan/dbak/internal/config"
+	"github.com/developerabdan/dbak/internal/system"
 )
 
 const (

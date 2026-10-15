@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"dbak/internal/app"
-	"dbak/internal/engine"
-	"dbak/internal/state"
+	"github.com/developerabdan/dbak/internal/app"
+	"github.com/developerabdan/dbak/internal/engine"
+	"github.com/developerabdan/dbak/internal/state"
 )
 
 type fakeEngine struct {

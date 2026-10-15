@@ -1,4 +1,4 @@
-module dbak
+module github.com/developerabdan/dbak
 
 go 1.26.0
 

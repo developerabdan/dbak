@@ -15,11 +15,11 @@ import (
 	driver "github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5"
 
-	"dbak/internal/config"
-	"dbak/internal/engine"
-	"dbak/internal/engine/mysql"
-	"dbak/internal/engine/postgres"
-	"dbak/internal/sqlhelper"
+	"github.com/developerabdan/dbak/internal/config"
+	"github.com/developerabdan/dbak/internal/engine"
+	"github.com/developerabdan/dbak/internal/engine/mysql"
+	"github.com/developerabdan/dbak/internal/engine/postgres"
+	"github.com/developerabdan/dbak/internal/sqlhelper"
 )
 
 const (

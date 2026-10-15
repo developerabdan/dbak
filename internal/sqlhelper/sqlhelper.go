@@ -11,7 +11,7 @@ import (
 	"strings"
 	"text/template"
 
-	"dbak/internal/config"
+	"github.com/developerabdan/dbak/internal/config"
 )
 
 //go:embed templates/*.sql.tmpl

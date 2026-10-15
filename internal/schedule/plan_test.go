@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"dbak/internal/config"
+	"github.com/developerabdan/dbak/internal/config"
 )
 
 func daily(clock, zone string) config.Schedule {

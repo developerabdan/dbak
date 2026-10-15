@@ -10,10 +10,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"dbak/internal/app"
-	"dbak/internal/config"
-	"dbak/internal/schedule"
-	"dbak/internal/system"
+	"github.com/developerabdan/dbak/internal/app"
+	"github.com/developerabdan/dbak/internal/config"
+	"github.com/developerabdan/dbak/internal/schedule"
+	"github.com/developerabdan/dbak/internal/system"
 )
 
 func newScheduleCommand(opts *globalOptions) *cobra.Command {

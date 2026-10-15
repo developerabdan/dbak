@@ -10,14 +10,14 @@ import (
 	"slices"
 	"time"
 
-	"dbak/internal/app"
-	"dbak/internal/config"
-	"dbak/internal/engine"
-	"dbak/internal/engine/mysql"
-	"dbak/internal/engine/postgres"
-	"dbak/internal/lock"
-	"dbak/internal/sftp"
-	"dbak/internal/state"
+	"github.com/developerabdan/dbak/internal/app"
+	"github.com/developerabdan/dbak/internal/config"
+	"github.com/developerabdan/dbak/internal/engine"
+	"github.com/developerabdan/dbak/internal/engine/mysql"
+	"github.com/developerabdan/dbak/internal/engine/postgres"
+	"github.com/developerabdan/dbak/internal/lock"
+	"github.com/developerabdan/dbak/internal/sftp"
+	"github.com/developerabdan/dbak/internal/state"
 )
 
 type JobOptions struct {

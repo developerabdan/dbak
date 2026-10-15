@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"dbak/internal/engine"
+	"github.com/developerabdan/dbak/internal/engine"
 )
 
 func TestMissingPrivileges(t *testing.T) {

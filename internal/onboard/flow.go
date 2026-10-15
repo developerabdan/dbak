@@ -5,8 +5,8 @@ import (
 	"errors"
 	"os"
 
-	"dbak/internal/app"
-	"dbak/internal/config"
+	"github.com/developerabdan/dbak/internal/app"
+	"github.com/developerabdan/dbak/internal/config"
 )
 
 const (

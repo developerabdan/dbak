@@ -12,7 +12,7 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
-	"dbak/internal/engine"
+	"github.com/developerabdan/dbak/internal/engine"
 )
 
 func testEngine(t *testing.T) *MySQL {

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"dbak/internal/app"
+	"github.com/developerabdan/dbak/internal/app"
 )
 
 func main() {

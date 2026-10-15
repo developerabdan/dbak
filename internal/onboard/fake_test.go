@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"dbak/internal/engine"
+	"github.com/developerabdan/dbak/internal/engine"
 )
 
 type answer struct {

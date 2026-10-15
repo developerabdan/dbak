@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"dbak/internal/config"
+	"github.com/developerabdan/dbak/internal/config"
 )
 
 func ConvertClock(clock, fromZone, toZone string, day time.Time) (string, error) {
