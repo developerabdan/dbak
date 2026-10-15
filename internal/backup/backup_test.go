@@ -1,0 +1,242 @@
+package backup
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"io"
+	"log/slog"
+	"os/exec"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"dbak/internal/app"
+	"dbak/internal/engine"
+	"dbak/internal/state"
+)
+
+type fakeEngine struct {
+	scripts  map[string]string
+	cleanups int
+}
+
+func (f *fakeEngine) Name() string          { return "fake" }
+func (f *fakeEngine) FileExtension() string { return "dump" }
+func (f *fakeEngine) Probe(context.Context, string) (engine.ServerInfo, error) {
+	return engine.ServerInfo{}, nil
+}
+func (f *fakeEngine) WrapOutput(w io.Writer) (io.WriteCloser, error) {
+	return engine.NopWriteCloser(w), nil
+}
+func (f *fakeEngine) DumpCommand(ctx context.Context, database string) (*engine.Dump, error) {
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", f.scripts[database])
+	return engine.NewDump(cmd, func() error { f.cleanups++; return nil }), nil
+}
+
+type fakeStore struct {
+	mu        sync.Mutex
+	files     map[string]*bytes.Buffer
+	dirs      []string
+	failAfter int
+	failMkdir bool
+}
+
+func newFakeStore() *fakeStore {
+	return &fakeStore{files: map[string]*bytes.Buffer{}, failAfter: -1}
+}
+
+func (s *fakeStore) MkdirAll(dir string) error {
+	if s.failMkdir {
+		return errors.New("permission denied")
+	}
+	s.dirs = append(s.dirs, dir)
+	return nil
+}
+
+func (s *fakeStore) Create(path string) (io.WriteCloser, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	buf := &bytes.Buffer{}
+	s.files[path] = buf
+	return &fakeFile{store: s, buf: buf}, nil
+}
+
+func (s *fakeStore) Rename(oldPath, newPath string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.files[newPath] = s.files[oldPath]
+	delete(s.files, oldPath)
+	return nil
+}
+
+func (s *fakeStore) Remove(path string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.files, path)
+	return nil
+}
+
+type fakeFile struct {
+	store *fakeStore
+	buf   *bytes.Buffer
+}
+
+func (f *fakeFile) Write(p []byte) (int, error) {
+	if f.store.failAfter >= 0 && f.buf.Len()+len(p) > f.store.failAfter {
+		return 0, errors.New("connection lost")
+	}
+	return f.buf.Write(p)
+}
+
+func (f *fakeFile) Close() error { return nil }
+
+func newRunner(e engine.Engine, s Store) *Runner {
+	at := time.Date(2026, 10, 15, 19, 0, 0, 0, time.UTC)
+	return &Runner{
+		Engine:     e,
+		Store:      s,
+		RemotePath: "/backups",
+		Hostname:   "vm-app-01",
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Now:        func() time.Time { return at },
+	}
+}
+
+func TestFileNaming(t *testing.T) {
+	at := time.Date(2026, 10, 16, 2, 0, 0, 0, time.FixedZone("WIB", 7*3600))
+	got := RemoteFile("/backups", "vm-app-01", "app_prod", at, "dump")
+	if want := "/backups/vm-app-01/app_prod/app_prod_20261015T190000Z.dump"; got != want {
+		t.Fatalf("got %s, want %s", got, want)
+	}
+	if got := FileName("app_prod", at, "sql.zst"); got != "app_prod_20261015T190000Z.sql.zst" {
+		t.Fatalf("got %s", got)
+	}
+}
+
+func TestSuccessfulBackup(t *testing.T) {
+	e := &fakeEngine{scripts: map[string]string{"app_prod": "printf 'dump data'"}}
+	s := newFakeStore()
+	results := newRunner(e, s).Run(context.Background(), []string{"app_prod"})
+	final := "/backups/vm-app-01/app_prod/app_prod_20261015T190000Z.dump"
+	if results[0].Status != state.StatusSuccess || results[0].RemotePath != final || results[0].SizeBytes != 9 {
+		t.Fatalf("unexpected result: %+v", results[0])
+	}
+	if got := s.files[final]; got == nil || got.String() != "dump data" {
+		t.Fatalf("the final file has wrong content: %v", got)
+	}
+	if _, ok := s.files[final+PartialSuffix]; ok {
+		t.Fatal("the partial file exists after success")
+	}
+	if s.dirs[0] != "/backups/vm-app-01/app_prod" {
+		t.Fatalf("got directory %s", s.dirs[0])
+	}
+	if e.cleanups != 1 {
+		t.Fatalf("got %d cleanups, want 1", e.cleanups)
+	}
+}
+
+func TestFailedDumpRemovesPartialFile(t *testing.T) {
+	e := &fakeEngine{scripts: map[string]string{
+		"app_prod": "printf 'half'; echo 'pg_dump: error: permission denied for table audit_log' >&2; exit 1",
+	}}
+	s := newFakeStore()
+	results := newRunner(e, s).Run(context.Background(), []string{"app_prod"})
+	res := results[0]
+	if res.Status != state.StatusFailure || res.FailureKind != FailureDump {
+		t.Fatalf("unexpected result: %+v", res)
+	}
+	if !strings.Contains(res.Error, "exit code 1") || !strings.Contains(res.Error, "permission denied for table audit_log") {
+		t.Fatalf("the error does not show the cause: %s", res.Error)
+	}
+	if len(s.files) != 0 {
+		t.Fatalf("files exist after a failed dump: %v", s.files)
+	}
+	if e.cleanups != 1 {
+		t.Fatalf("got %d cleanups, want 1", e.cleanups)
+	}
+}
+
+func TestUploadFailureStopsDump(t *testing.T) {
+	e := &fakeEngine{scripts: map[string]string{"app_prod": "yes backup"}}
+	s := newFakeStore()
+	s.failAfter = 3 << 20
+	done := make(chan []Result)
+	go func() {
+		done <- newRunner(e, s).Run(context.Background(), []string{"app_prod"})
+	}()
+	select {
+	case results := <-done:
+		if results[0].FailureKind != FailureUpload || !strings.Contains(results[0].Error, "connection lost") {
+			t.Fatalf("unexpected result: %+v", results[0])
+		}
+		if len(s.files) != 0 {
+			t.Fatal("the partial file exists after an upload failure")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the run did not stop after the upload failure")
+	}
+}
+
+func TestMissingToolGivesClearError(t *testing.T) {
+	e := &missingToolEngine{}
+	results := newRunner(e, newFakeStore()).Run(context.Background(), []string{"app_prod"})
+	if !strings.Contains(results[0].Error, "Make sure that the client tool is installed") {
+		t.Fatalf("got %s", results[0].Error)
+	}
+}
+
+type missingToolEngine struct{ fakeEngine }
+
+func (m *missingToolEngine) DumpCommand(ctx context.Context, _ string) (*engine.Dump, error) {
+	return engine.NewDump(exec.CommandContext(ctx, "/nonexistent/pg_dump"), nil), nil
+}
+
+func TestOneFailureDoesNotStopOtherDatabases(t *testing.T) {
+	e := &fakeEngine{scripts: map[string]string{
+		"app_prod":  "exit 2",
+		"app_audit": "printf ok",
+	}}
+	results := newRunner(e, newFakeStore()).Run(context.Background(), []string{"app_prod", "app_audit"})
+	if results[0].Status != state.StatusFailure || results[1].Status != state.StatusSuccess {
+		t.Fatalf("unexpected results: %+v", results)
+	}
+	if ExitCode(results) != app.ExitPartial {
+		t.Fatalf("got exit code %d, want %d", ExitCode(results), app.ExitPartial)
+	}
+}
+
+func TestMkdirFailureIsUploadFailure(t *testing.T) {
+	e := &fakeEngine{scripts: map[string]string{"app_prod": "printf ok"}}
+	s := newFakeStore()
+	s.failMkdir = true
+	results := newRunner(e, s).Run(context.Background(), []string{"app_prod"})
+	if results[0].FailureKind != FailureUpload {
+		t.Fatalf("unexpected result: %+v", results[0])
+	}
+}
+
+func TestExitCode(t *testing.T) {
+	ok := Result{Database: state.Database{Status: state.StatusSuccess}}
+	dump := Result{Database: state.Database{Status: state.StatusFailure}, FailureKind: FailureDump}
+	upload := Result{Database: state.Database{Status: state.StatusFailure}, FailureKind: FailureUpload}
+	cases := []struct {
+		name    string
+		results []Result
+		want    int
+	}{
+		{"all databases succeed", []Result{ok, ok}, app.ExitOK},
+		{"some databases fail", []Result{ok, dump}, app.ExitPartial},
+		{"all dumps fail", []Result{dump, dump}, app.ExitDumpFailed},
+		{"all uploads fail", []Result{upload, upload}, app.ExitUploadFailed},
+		{"mixed failures", []Result{upload, dump}, app.ExitDumpFailed},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := ExitCode(c.results); got != c.want {
+				t.Fatalf("got %d, want %d", got, c.want)
+			}
+		})
+	}
+}
