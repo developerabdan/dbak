@@ -2,6 +2,7 @@ package system
 
 import (
 	"os"
+	"os/user"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -138,4 +139,34 @@ func TestProcessRunning(t *testing.T) {
 	if processRunning(proc, "crond") {
 		t.Fatal("got true for crond")
 	}
+}
+
+func TestInvokingUser(t *testing.T) {
+	lookup := func(name string) (*user.User, error) {
+		if name != "sukuna" {
+			return nil, user.UnknownUserError(name)
+		}
+		return &user.User{Uid: "1000", Gid: "1001", HomeDir: "/home/sukuna"}, nil
+	}
+	homeDir := func() (string, error) { return "/root", nil }
+
+	t.Run("sudo gives the home directory of the user", func(t *testing.T) {
+		home, owner, err := invokingUser("sukuna", lookup, homeDir)
+		if err != nil || home != "/home/sukuna" || owner != (Owner{UID: 1000, GID: 1001}) {
+			t.Fatalf("got %q, %+v, %v", home, owner, err)
+		}
+	})
+
+	t.Run("without sudo the home directory of the process is used", func(t *testing.T) {
+		home, owner, err := invokingUser("", lookup, homeDir)
+		if err != nil || home != "/root" || owner != CurrentOwner() {
+			t.Fatalf("got %q, %+v, %v", home, owner, err)
+		}
+	})
+
+	t.Run("an unknown user gives an error", func(t *testing.T) {
+		if _, _, err := invokingUser("nobody-here", lookup, homeDir); err == nil {
+			t.Fatal("got no error")
+		}
+	})
 }

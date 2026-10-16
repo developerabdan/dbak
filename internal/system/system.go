@@ -249,3 +249,27 @@ func processRunning(procDir string, names ...string) bool {
 	}
 	return false
 }
+
+func InvokingUser() (string, Owner, error) {
+	return invokingUser(os.Getenv("SUDO_USER"), user.Lookup, os.UserHomeDir)
+}
+
+func invokingUser(sudoUser string, lookup func(string) (*user.User, error), homeDir func() (string, error)) (string, Owner, error) {
+	if sudoUser == "" || sudoUser == "root" {
+		home, err := homeDir()
+		if err != nil {
+			return "", Owner{}, fmt.Errorf("cannot find the home directory: %w", err)
+		}
+		return home, CurrentOwner(), nil
+	}
+	u, err := lookup(sudoUser)
+	if err != nil {
+		return "", Owner{}, fmt.Errorf("cannot find the user %s: %w", sudoUser, err)
+	}
+	uid, uidErr := strconv.Atoi(u.Uid)
+	gid, gidErr := strconv.Atoi(u.Gid)
+	if uidErr != nil || gidErr != nil {
+		return "", Owner{}, fmt.Errorf("the user %s has a UID or a GID that is not a number", sudoUser)
+	}
+	return u.HomeDir, Owner{UID: uid, GID: gid}, nil
+}
