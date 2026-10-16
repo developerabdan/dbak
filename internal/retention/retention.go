@@ -69,7 +69,9 @@ func keepSet(sorted []File, rules Rules, loc *time.Location, now time.Time) []bo
 	if len(sorted) == 0 {
 		return keep
 	}
-	keep[0] = true
+	for i, f := range sorted {
+		keep[i] = f.Time.Equal(sorted[0].Time)
+	}
 	today := dayKey(now.In(loc))
 	daily := func(t time.Time) string { return dayKey(t) }
 	if rules.KeepToday {

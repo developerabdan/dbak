@@ -177,6 +177,17 @@ func TestRemovePartialFiles(t *testing.T) {
 	}
 }
 
+func TestRemoveKeepsAllNewestFiles(t *testing.T) {
+	newest := at("2026-10-15T19:00:00Z")
+	plain := File{Name: "app_20261015T190000Z.dump", Time: newest}
+	sealed := File{Name: "app_20261015T190000Z.dump.age", Time: newest}
+	older := file("2026-10-15T07:00:00Z")
+	removed := Remove([]File{older, plain, sealed}, Rules{Daily: 1}, time.UTC, at("2026-10-15T20:00:00Z"))
+	if len(removed) != 1 || removed[0].Name != older.Name {
+		t.Fatalf("got %v, want only the older file", removed)
+	}
+}
+
 func TestParse(t *testing.T) {
 	good := map[string]File{
 		"app_prod_20261015T190000Z.dump":             {Name: "app_prod_20261015T190000Z.dump", Time: at("2026-10-15T19:00:00Z")},
