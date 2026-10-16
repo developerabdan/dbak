@@ -31,7 +31,7 @@ backups stay encrypted.
 ## Restore after a disaster
 
 You do not need dbak or the old VM. On any computer, you need the private key,
-the `age` tool, and the restore tools of the database.
+the [age](https://github.com/FiloSottile/age) tool, and the restore tools of the database.
 
 1. Download the backup from the SFTP server.
 2. Decrypt the backup and restore it in one command. The decrypted data does

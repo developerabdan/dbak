@@ -22,8 +22,10 @@ To see the result, run `dbak status`.
 You do not need dbak to restore a backup. You need the private key, `age`,
 and `zstd`.
 
-1. Download the backup from the SFTP server.
-2. Decrypt the backup:
+1. On your computer, install [age](https://github.com/FiloSottile/age) and
+   `zstd`.
+2. Download the backup from the SFTP server.
+3. Decrypt the backup:
 
 ```sh
 age -d -i key.txt encryptedfile.sql.zst.age | zstd -d -o output.sql
