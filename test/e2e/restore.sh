@@ -101,6 +101,25 @@ docker exec "$vm" dbak run >"$work/run.log" 2>&1 || {
 grep -q "encrypted=true" "$work/run.log" || fail "the log does not show the encryption"
 docker exec "$vm" grep -rq "AGE-SECRET-KEY" /etc/dbak && fail "the VM has the private key"
 
+echo "== dbak restore on the VM =="
+private_key="$(grep AGE-SECRET-KEY "$work/key.txt")"
+docker exec "$vm" useradd --create-home sukuna
+printf '1\n\n\n%s\n' "$private_key" | docker exec -i -e SUDO_USER=sukuna "$vm" dbak restore >"$work/restore-pg.log" 2>&1 || {
+	cat "$work/restore-pg.log"
+	fail "dbak restore of the PostgreSQL backup failed"
+}
+printf '2\n\n\n%s\n' "$private_key" | docker exec -i -e SUDO_USER=sukuna "$vm" dbak restore >"$work/restore-my.log" 2>&1 || {
+	cat "$work/restore-my.log"
+	fail "dbak restore of the MySQL backup failed"
+}
+grep -qF "$private_key" "$work/restore-pg.log" "$work/restore-my.log" && fail "the restore output shows the private key"
+pg_local="$(docker exec "$vm" sh -c 'ls /home/sukuna/backups/*.dump')"
+my_local="$(docker exec "$vm" sh -c 'ls /home/sukuna/backups/*.sql')"
+[[ "$(docker exec "$vm" stat -c '%U %a' "$pg_local")" == "sukuna 600" ]] || fail "the restored file has the wrong owner or mode"
+docker exec "$vm" pg_restore --list "$pg_local" | grep -q "TABLE public customers" || fail "the restored PostgreSQL dump has no customers table"
+docker exec "$vm" grep -q "CREATE TABLE \`customers\`" "$my_local" || fail "the restored MySQL dump has no customers table"
+docker exec "$vm" sh -c 'ls /home/sukuna/backups/*.partial' >/dev/null 2>&1 && fail "a partial file stays"
+
 echo "== The VM is lost =="
 docker rm -f "$vm" >/dev/null
 
