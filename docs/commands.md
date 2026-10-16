@@ -6,6 +6,7 @@
 | `dbak run [--source NAME] [--db NAME]` | Makes a backup now. The schedule uses this command. |
 | `dbak status [--json]` | Shows the last run of each database and the next scheduled run. |
 | `dbak list [--source NAME] [--db NAME]` | Shows the backups on the SFTP server. |
+| `dbak restore` | Downloads one backup from the SFTP server to a local directory with questions. |
 | `dbak doctor` | Examines the config, the permissions, the tools, the connections, and the schedule. It examines each source. |
 | `dbak source list` | Shows the database sources. |
 | `dbak source add` | Adds a database source with questions, examines it, and can make a backup of it. |
@@ -24,7 +25,8 @@ If two sources have a database with the same name, `--db` must have
 `--source`.
 
 Run `init`, `source add`, `source edit`, `source remove`, and `notify` with
-`sudo`. These commands write the config and the secret files.
+`sudo`. These commands write the config and the secret files. Run `restore`
+with `sudo` too, because it reads the SFTP key.
 
 ## Exit codes
 

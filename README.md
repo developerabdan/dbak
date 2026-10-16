@@ -19,8 +19,12 @@ To see the result, run `dbak status`.
 
 ## Restore
 
-You do not need dbak to restore a backup. You need the private key, `age`,
-and `zstd`.
+On the VM, run `sudo dbak restore`. Select the source and the backup, and
+type the directory. If the backup is encrypted, paste the age private key.
+dbak writes the dump to the directory, by default `~/backups`.
+
+Without dbak, you can restore a backup on a different computer. You need the
+private key, `age`, and `zstd`.
 
 1. On your computer, install [age](https://github.com/FiloSottile/age) and
    `zstd`.

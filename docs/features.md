@@ -16,6 +16,9 @@
 - **Encrypted backups.** dbak can encrypt each backup with
   [age](https://age-encryption.org) before the upload. Only the public key is
   on the server. You can restore a backup without dbak.
+- **Simple restore.** `sudo dbak restore` shows the backups with the date and
+  the size. It downloads, decrypts, and decompresses the selected backup to a
+  local directory.
 - **Pinned host key.** dbak pins the SFTP host key in `dbak init`. If the key
   changes, the backup stops.
 - **Schedule in your timezone.** dbak installs a systemd timer. If the system
