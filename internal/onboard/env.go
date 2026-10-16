@@ -2,6 +2,8 @@ package onboard
 
 import (
 	"context"
+	"io"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -48,6 +50,12 @@ type SFTPClient interface {
 	Close() error
 }
 
+type BackupStore interface {
+	ReadDir(dir string) ([]os.FileInfo, error)
+	Open(path string) (io.ReadCloser, error)
+	Close() error
+}
+
 type Env struct {
 	UI         UI
 	Paths      Paths
@@ -65,6 +73,9 @@ type Env struct {
 	DialSFTP     func(cfg sftp.Config) (SFTPClient, error)
 	FetchHostKey func(host string, port int) (ssh.PublicKey, error)
 	RunBackup    func(ctx context.Context, source string) (state.Run, error)
+	OpenBackups  func(cfg sftp.Config) (BackupStore, error)
+	RestoreDir   string
+	RestoreOwner system.Owner
 
 	InstallSchedule  func(ctx context.Context, sc config.Schedule) (schedule.Result, error)
 	SendTelegramTest func(ctx context.Context, token, chatID string, threadID int) error

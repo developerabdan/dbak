@@ -19,11 +19,15 @@ func sessionFor(env *Env, cfg *config.Config) *session {
 	return s
 }
 
-func existingSession(env *Env) (*session, error) {
+func existingConfig(env *Env) (*config.Config, error) {
 	if _, err := os.Stat(env.Paths.ConfigPath); errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("dbak has no config in %s. Run: sudo dbak init", env.Paths.ConfigPath)
 	}
-	cfg, err := config.Load(env.Paths.ConfigPath)
+	return config.Load(env.Paths.ConfigPath)
+}
+
+func existingSession(env *Env) (*session, error) {
+	cfg, err := existingConfig(env)
 	if err != nil {
 		return nil, err
 	}
