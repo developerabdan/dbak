@@ -109,3 +109,60 @@ func TestNewWriterNeedsARecipient(t *testing.T) {
 		t.Fatal("got no error without a public key")
 	}
 }
+
+func TestNewReaderDecryptsWithTheMatchingKey(t *testing.T) {
+	pair, err := GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	recipients, err := ParseRecipients([]string{pair.Public})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sealed bytes.Buffer
+	w, err := NewWriter(&sealed, recipients)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.WriteString(w, "dump data"); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("the matching key decrypts the data", func(t *testing.T) {
+		identity, err := ParseIdentity("  " + pair.Private + "\n")
+		if err != nil {
+			t.Fatal(err)
+		}
+		r, err := NewReader(bytes.NewReader(sealed.Bytes()), identity)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := io.ReadAll(r)
+		if err != nil || string(got) != "dump data" {
+			t.Fatalf("got %q and %v", got, err)
+		}
+	})
+
+	t.Run("a different key gives ErrWrongKey", func(t *testing.T) {
+		identity, err := ParseIdentity(other.Private)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := NewReader(bytes.NewReader(sealed.Bytes()), identity); !errors.Is(err, ErrWrongKey) {
+			t.Fatalf("got %v, want ErrWrongKey", err)
+		}
+	})
+
+	t.Run("a public key is not a private key", func(t *testing.T) {
+		if _, err := ParseIdentity(pair.Public); err == nil {
+			t.Fatal("got no error")
+		}
+	})
+}
