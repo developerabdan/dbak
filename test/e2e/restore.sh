@@ -102,7 +102,7 @@ grep -q "encrypted=true" "$work/run.log" || fail "the log does not show the encr
 docker exec "$vm" grep -rq "AGE-SECRET-KEY" /etc/dbak && fail "the VM has the private key"
 
 echo "== dbak restore on the VM =="
-private_key="$(grep AGE-SECRET-KEY "$work/key.txt")"
+private_key="$(docker run --rm -v "$work:/work" "$image" grep AGE-SECRET-KEY /work/key.txt)"
 docker exec "$vm" useradd --create-home sukuna
 printf '1\n\n\n%s\n' "$private_key" | docker exec -i -e SUDO_USER=sukuna "$vm" dbak restore >"$work/restore-pg.log" 2>&1 || {
 	cat "$work/restore-pg.log"
