@@ -164,7 +164,7 @@ func (m *MySQL) dumpCommand(ctx context.Context, database string, extra ...strin
 
 func (m *MySQL) dumpArgs(optionFile, database string, client engine.ClientInfo, extra ...string) []string {
 	args := []string{
-		"--defaults-extra-file=" + optionFile,
+		"--defaults-file=" + optionFile,
 		"--single-transaction",
 		"--quick",
 		"--routines",

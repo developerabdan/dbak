@@ -51,7 +51,7 @@ func TestDumpArgs(t *testing.T) {
 			m := testEngine(t)
 			m.server = c.server
 			args := m.dumpArgs("/tmp/x.cnf", "app_prod", c.client)
-			if args[0] != "--defaults-extra-file=/tmp/x.cnf" {
+			if args[0] != "--defaults-file=/tmp/x.cnf" {
 				t.Fatalf("got first argument %s, want the option file", args[0])
 			}
 			if got := slices.Contains(args, "--set-gtid-purged=OFF"); got != c.wantGTID {
@@ -113,7 +113,7 @@ func TestDumpCommandUsesSecretFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	optionFile := strings.TrimPrefix(dump.Cmd.Args[1], "--defaults-extra-file=")
+	optionFile := strings.TrimPrefix(dump.Cmd.Args[1], "--defaults-file=")
 	info, err := os.Stat(optionFile)
 	if err != nil {
 		t.Fatal(err)
