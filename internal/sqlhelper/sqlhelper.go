@@ -39,7 +39,7 @@ type Variant struct {
 }
 
 var (
-	Postgres14   = Variant{"postgres-14", config.EnginePostgres, "PostgreSQL 14 or later"}
+	Postgres14   = Variant{"postgres-14", config.EnginePostgres, "PostgreSQL 14 or later (14, 15, 16, 17, 18)"}
 	Postgres13   = Variant{"postgres-13", config.EnginePostgres, "PostgreSQL 13 or earlier"}
 	MySQL8020    = Variant{"mysql-8.0.20", config.EngineMySQL, "MySQL 8.0.20 or later"}
 	MySQL80      = Variant{"mysql-8.0", config.EngineMySQL, "MySQL 8.0.0 to 8.0.19"}
