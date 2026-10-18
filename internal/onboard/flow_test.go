@@ -62,6 +62,7 @@ func newHarness(t *testing.T) *harness {
 		Timezone:   "UTC",
 		PrimaryIP:  "10.0.0.5",
 		OSFamily:   system.FamilyDebian,
+		OSRelease:  system.OSRelease{ID: "ubuntu", IDLike: []string{"debian"}, VersionID: "22.04"},
 		HasSystemd: true,
 		Now:        func() time.Time { return time.Date(2026, 10, 15, 12, 0, 0, 0, time.UTC) },
 		NewEngine: func(source config.Source, _ string) (engine.Full, error) {
@@ -401,17 +402,120 @@ func TestMissingClientToolInstalled(t *testing.T) {
 	}
 }
 
-func TestOldPostgresClientStops(t *testing.T) {
+func TestOldPostgresClientDeclinedStops(t *testing.T) {
 	h := newHarness(t)
 	h.eng.client = engine.ClientInfo{Text: "pg_dump (PostgreSQL) 14.10", Major: 14}
 	answers := append(sourceStart(config.EnginePostgres), answer{match: "database user for backup", value: "yes"})
 	answers = append(answers, credentialAnswers("s3cret")...)
+	answers = append(answers, answer{match: "Install the PostgreSQL 16 client tools from the PGDG repository now?", value: false})
 	err := h.run(t, answers...)
 	if err == nil || !strings.Contains(err.Error(), "pg_dump 14 cannot make a backup of a PostgreSQL 16 server") {
 		t.Fatalf("got %v", err)
 	}
-	if !strings.Contains(h.ui.out.String(), "postgresql-client-16") {
+	if !strings.Contains(h.ui.out.String(), "apt-get install -y postgresql-client-16") {
 		t.Fatalf("the output does not show the PGDG commands:\n%s", h.ui.out.String())
+	}
+	if len(h.commands) != 0 {
+		t.Fatal("dbak ran a command after the answer No")
+	}
+}
+
+func oldClientSession(h *harness) *session {
+	h.eng.client = engine.ClientInfo{Text: "pg_dump (PostgreSQL) 14.10", Major: 14}
+	s := newSession(h.env)
+	s.cfg.Sources = []config.Source{{Name: "postgres", Engine: config.EnginePostgres}}
+	return s
+}
+
+func TestOldPostgresClientInstalled(t *testing.T) {
+	h := newHarness(t)
+	s := oldClientSession(h)
+	h.env.RunCommand = func(_ context.Context, args []string) error {
+		h.commands = append(h.commands, args)
+		h.eng.client = engine.ClientInfo{Text: "pg_dump (PostgreSQL) 16.4", Major: 16}
+		return nil
+	}
+	var looked []string
+	h.env.LookPath = func(file string) (string, error) {
+		looked = append(looked, file)
+		return file, nil
+	}
+	h.ui = newFakeUI(t, answer{match: "Install the PostgreSQL 16 client tools from the PGDG repository now?", value: true})
+	h.env.UI = h.ui
+	eng, err := s.compatibleClient(context.Background(), h.eng, h.eng.server)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.ui.done()
+	if eng == nil || len(h.commands) != 4 || strings.Join(h.commands[1], " ") != "apt-get install -y postgresql-common gnupg" || strings.Join(h.commands[3], " ") != "apt-get install -y postgresql-client-16" {
+		t.Fatalf("got commands %v", h.commands)
+	}
+	if s.src().BinDir != "/usr/lib/postgresql/16/bin" {
+		t.Fatalf("got bin_dir %q", s.src().BinDir)
+	}
+	if len(looked) != 1 || looked[0] != "/usr/lib/postgresql/16/bin/pg_dump" {
+		t.Fatalf("got look paths %v", looked)
+	}
+	if last := h.sources[len(h.sources)-1]; last.BinDir != "/usr/lib/postgresql/16/bin" {
+		t.Fatalf("the new engine uses bin_dir %q", last.BinDir)
+	}
+}
+
+func TestOldPostgresClientInstallFails(t *testing.T) {
+	h := newHarness(t)
+	s := oldClientSession(h)
+	h.env.RunCommand = func(context.Context, []string) error { return errors.New("exit status 100") }
+	h.ui = newFakeUI(t, answer{match: "Install the PostgreSQL 16 client tools", value: true})
+	h.env.UI = h.ui
+	_, err := s.compatibleClient(context.Background(), h.eng, h.eng.server)
+	if err == nil || !strings.Contains(err.Error(), `the command "apt-get update" failed`) || strings.Contains(err.Error(), "rpm -e") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestOldPostgresClientInstallFailsOnRHEL(t *testing.T) {
+	h := newHarness(t)
+	s := oldClientSession(h)
+	h.env.OSFamily = system.FamilyRHEL
+	h.env.OSRelease = system.OSRelease{ID: "rocky", IDLike: []string{"rhel"}, VersionID: "9.4"}
+	h.env.RunCommand = func(_ context.Context, args []string) error {
+		if args[len(args)-1] == "postgresql16" {
+			return errors.New("exit status 1")
+		}
+		return nil
+	}
+	h.ui = newFakeUI(t, answer{match: "Install the PostgreSQL 16 client tools", value: true})
+	h.env.UI = h.ui
+	_, err := s.compatibleClient(context.Background(), h.eng, h.eng.server)
+	if err == nil || !strings.Contains(err.Error(), "remove the PGDG repository with the command: rpm -e pgdg-redhat-repo") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestOldPostgresClientStillOld(t *testing.T) {
+	h := newHarness(t)
+	s := oldClientSession(h)
+	h.ui = newFakeUI(t, answer{match: "Install the PostgreSQL 16 client tools", value: true})
+	h.env.UI = h.ui
+	_, err := s.compatibleClient(context.Background(), h.eng, h.eng.server)
+	if err == nil || !strings.Contains(err.Error(), "does not work with the server") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestOldPostgresClientOnUnknownSystem(t *testing.T) {
+	h := newHarness(t)
+	s := oldClientSession(h)
+	h.env.OSFamily = ""
+	h.env.OSRelease = system.OSRelease{ID: "arch"}
+	h.ui = newFakeUI(t)
+	h.env.UI = h.ui
+	_, err := s.compatibleClient(context.Background(), h.eng, h.eng.server)
+	if err == nil || !strings.Contains(err.Error(), "pg_dump 14 cannot make a backup") {
+		t.Fatalf("got %v", err)
+	}
+	if !strings.Contains(h.ui.out.String(), "https://www.postgresql.org/download/") || len(h.commands) != 0 {
+		t.Fatalf("got output:\n%s", h.ui.out.String())
 	}
 }
 

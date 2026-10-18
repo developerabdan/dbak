@@ -87,6 +87,7 @@ func newInitEnv(opts *globalOptions) (*onboard.Env, error) {
 		Timezone:   system.DetectTimezone(),
 		PrimaryIP:  system.PrimaryIP(),
 		OSFamily:   release.Family(),
+		OSRelease:  release,
 		HasSystemd: system.HasSystemd(),
 		NewEngine: func(source config.Source, password string) (engine.Full, error) {
 			return backup.NewEngine(source, password, opts.stateDir)

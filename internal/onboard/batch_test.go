@@ -138,6 +138,9 @@ func TestBatchInitFailures(t *testing.T) {
 		{"missing client tool", nil, Secrets{DBPassword: "x"}, func(h *harness) {
 			h.env.LookPath = func(string) (string, error) { return "", errors.New("not found") }
 		}, app.ExitGeneral, "pg_dump is not installed"},
+		{"old client tool", nil, Secrets{DBPassword: "x"}, func(h *harness) {
+			h.eng.client = engine.ClientInfo{Text: "pg_dump (PostgreSQL) 14.10", Major: 14}
+		}, app.ExitGeneral, "pg_dump 14 cannot make a backup of a PostgreSQL 16 server"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

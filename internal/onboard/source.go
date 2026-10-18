@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -169,7 +170,7 @@ func (s *session) connect(ctx context.Context) error {
 			continue
 		}
 		ui.Success(fmt.Sprintf("Connected to %s %s.", flavorName(info.Flavor), info.Version))
-		if err := s.checkClient(ctx, eng, info); err != nil {
+		if eng, err = s.compatibleClient(ctx, eng, info); err != nil {
 			return err
 		}
 		s.eng = eng
@@ -195,12 +196,8 @@ func (s *session) checkClient(ctx context.Context, eng engine.Full, info engine.
 		return err
 	}
 	if s.src().Engine == config.EnginePostgres {
-		var tooOld *engine.ClientTooOldError
-		if err := postgres.CheckClient(client, info); errors.As(err, &tooOld) {
-			ui.Error(app.Sentence(err.Error()))
-			ui.Info(fmt.Sprintf("To install the PostgreSQL %d client tools from the PGDG repository, run these commands:", tooOld.Server))
-			ui.Code(strings.Join(system.PGDGInstructions(s.env.OSFamily, tooOld.Server), "\n"))
-			return fmt.Errorf("pg_dump %d cannot make a backup of a PostgreSQL %d server. Install the new client tools, then run dbak init again", tooOld.Client, tooOld.Server)
+		if err := postgres.CheckClient(client, info); err != nil {
+			return err
 		}
 	}
 	ui.Success("The client tool is: " + client.Text)
@@ -208,6 +205,71 @@ func (s *session) checkClient(ctx context.Context, eng engine.Full, info engine.
 		ui.Warn("The server is MySQL, but the client tool is from MariaDB. Install the MySQL client if the backup fails.")
 	}
 	return nil
+}
+
+func (s *session) reportOldClient(tooOld *engine.ClientTooOldError, lines []string) error {
+	ui := s.env.UI
+	ui.Error(app.Sentence(tooOld.Error()))
+	ui.Info(fmt.Sprintf("To install the PostgreSQL %d client tools from the PGDG repository, run these commands:", tooOld.Server))
+	ui.Code(strings.Join(lines, "\n"))
+	return fmt.Errorf("pg_dump %d cannot make a backup of a PostgreSQL %d server. Install the new client tools, then run dbak init again", tooOld.Client, tooOld.Server)
+}
+
+func (s *session) compatibleClient(ctx context.Context, eng engine.Full, info engine.ServerInfo) (engine.Full, error) {
+	var tooOld *engine.ClientTooOldError
+	if err := s.checkClient(ctx, eng, info); !errors.As(err, &tooOld) {
+		return eng, err
+	}
+	install, ok := system.PGDGClientInstall(s.env.OSRelease, runtime.GOARCH, tooOld.Server)
+	if !ok {
+		return nil, s.reportOldClient(tooOld, system.PGDGInstructions(s.env.OSFamily, tooOld.Server))
+	}
+	if err := s.installPGDGClient(ctx, tooOld, install); err != nil {
+		return nil, err
+	}
+	eng, err := s.env.NewEngine(*s.src(), s.password())
+	if err != nil {
+		return nil, err
+	}
+	if err := s.checkClient(ctx, eng, info); err != nil {
+		return nil, fmt.Errorf("the client tool in %s does not work with the server: %w. Install the client tools manually, then run dbak init again", install.BinDir, err)
+	}
+	return eng, nil
+}
+
+func (s *session) installPGDGClient(ctx context.Context, tooOld *engine.ClientTooOldError, install system.PGDGInstall) error {
+	ui := s.env.UI
+	lines := install.Lines()
+	ui.Warn(fmt.Sprintf("pg_dump %d cannot make a backup of a PostgreSQL %d server.", tooOld.Client, tooOld.Server))
+	confirmed, err := ui.Confirm(fmt.Sprintf("Install the PostgreSQL %d client tools from the PGDG repository now?", tooOld.Server),
+		"dbak will run: "+strings.Join(lines, " && "), true)
+	if err != nil {
+		return err
+	}
+	if !confirmed {
+		return s.reportOldClient(tooOld, lines)
+	}
+	for _, c := range install.Commands {
+		if err := s.env.RunCommand(ctx, c); err != nil {
+			return installFailed(c, err, tooOld.Server, install.RemoveRepo)
+		}
+	}
+	src := s.src()
+	src.BinDir = install.BinDir
+	tool := backup.ClientTool(*src)
+	if _, err := s.env.LookPath(tool); err != nil {
+		return fmt.Errorf("the client tool %s does not exist after the install. Install the PostgreSQL %d client tools manually, then run dbak init again", tool, tooOld.Server)
+	}
+	ui.Success(fmt.Sprintf("The PostgreSQL %d client tools are installed. dbak will use %s.", tooOld.Server, tool))
+	return nil
+}
+
+func installFailed(command []string, err error, major int, removeRepo string) error {
+	message := fmt.Sprintf("the command %q failed: %v. Install the PostgreSQL %d client tools manually, then run dbak init again", strings.Join(command, " "), err, major)
+	if removeRepo != "" {
+		message += ". If dnf fails after this error, remove the PGDG repository with the command: " + removeRepo
+	}
+	return errors.New(message)
 }
 
 func (s *session) chooseDatabases(ctx context.Context) error {

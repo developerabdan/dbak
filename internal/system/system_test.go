@@ -73,6 +73,42 @@ func TestPGDGInstructions(t *testing.T) {
 	}
 }
 
+func TestPGDGClientInstall(t *testing.T) {
+	cases := []struct {
+		name      string
+		release   OSRelease
+		arch      string
+		wantOK    bool
+		wantLast  string
+		wantBin   string
+		wantFirst string
+	}{
+		{"ubuntu", OSRelease{ID: "ubuntu", IDLike: []string{"debian"}, VersionID: "22.04"}, "amd64", true, "apt-get install -y postgresql-client-17", "/usr/lib/postgresql/17/bin", "apt-get update"},
+		{"rocky 9 on amd64", OSRelease{ID: "rocky", IDLike: []string{"rhel", "centos", "fedora"}, VersionID: "9.4"}, "amd64", true, "dnf install -y postgresql17", "/usr/pgsql-17/bin", "dnf install -y https://download.postgresql.org/pub/repos/yum/reporpms/EL-9-x86_64/pgdg-redhat-repo-latest.noarch.rpm"},
+		{"almalinux 10 on arm64", OSRelease{ID: "almalinux", IDLike: []string{"rhel"}, VersionID: "10.0"}, "arm64", true, "dnf install -y postgresql17", "/usr/pgsql-17/bin", "dnf install -y https://download.postgresql.org/pub/repos/yum/reporpms/EL-10-aarch64/pgdg-redhat-repo-latest.noarch.rpm"},
+		{"rocky 8", OSRelease{ID: "rocky", IDLike: []string{"rhel"}, VersionID: "8.10"}, "amd64", false, "", "", ""},
+		{"fedora", OSRelease{ID: "fedora", VersionID: "40"}, "amd64", false, "", "", ""},
+		{"amazon linux", OSRelease{ID: "amzn", IDLike: []string{"centos", "rhel", "fedora"}, VersionID: "2023"}, "amd64", false, "", "", ""},
+		{"rhel on an unknown architecture", OSRelease{ID: "rhel", VersionID: "9.4"}, "s390x", false, "", "", ""},
+		{"unknown system", OSRelease{ID: "arch"}, "amd64", false, "", "", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			install, ok := PGDGClientInstall(c.release, c.arch, 17)
+			if ok != c.wantOK {
+				t.Fatalf("got ok %v, want %v", ok, c.wantOK)
+			}
+			if !ok {
+				return
+			}
+			lines := install.Lines()
+			if lines[0] != c.wantFirst || lines[len(lines)-1] != c.wantLast || install.BinDir != c.wantBin {
+				t.Fatalf("got %v in %s", lines, install.BinDir)
+			}
+		})
+	}
+}
+
 func TestDetectTimezone(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "missing")
 	if got := detectTimezone(writeFile(t, "timezone", "Asia/Jakarta\n"), missing, ""); got != "Asia/Jakarta" {

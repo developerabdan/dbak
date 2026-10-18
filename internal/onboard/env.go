@@ -64,6 +64,7 @@ type Env struct {
 	Timezone   string
 	PrimaryIP  string
 	OSFamily   string
+	OSRelease  system.OSRelease
 	HasSystemd bool
 	Now        func() time.Time
 

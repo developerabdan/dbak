@@ -118,6 +118,61 @@ func PGDGInstructions(family string, major int) []string {
 	return []string{fmt.Sprintf("Install the PostgreSQL %d client tools from https://www.postgresql.org/download/", major)}
 }
 
+type PGDGInstall struct {
+	Commands   [][]string
+	BinDir     string
+	RemoveRepo string
+}
+
+func (p PGDGInstall) Lines() []string {
+	lines := make([]string, 0, len(p.Commands))
+	for _, c := range p.Commands {
+		lines = append(lines, strings.Join(c, " "))
+	}
+	return lines
+}
+
+func PGDGClientInstall(release OSRelease, arch string, major int) (PGDGInstall, bool) {
+	switch release.Family() {
+	case FamilyDebian:
+		return PGDGInstall{
+			Commands: [][]string{
+				{"apt-get", "update"},
+				{"apt-get", "install", "-y", "postgresql-common", "gnupg"},
+				{"/usr/share/postgresql-common/pgdg/apt.postgresql.org.sh", "-y"},
+				{"apt-get", "install", "-y", fmt.Sprintf("postgresql-client-%d", major)},
+			},
+			BinDir: fmt.Sprintf("/usr/lib/postgresql/%d/bin", major),
+		}, true
+	case FamilyRHEL:
+		return rhelPGDGInstall(release, arch, major)
+	}
+	return PGDGInstall{}, false
+}
+
+func rhelPGDGInstall(release OSRelease, arch string, major int) (PGDGInstall, bool) {
+	if release.ID == "fedora" || release.ID == "amzn" {
+		return PGDGInstall{}, false
+	}
+	el, err := strconv.Atoi(strings.SplitN(release.VersionID, ".", 2)[0])
+	if err != nil || el < 9 {
+		return PGDGInstall{}, false
+	}
+	machine, ok := map[string]string{"amd64": "x86_64", "arm64": "aarch64"}[arch]
+	if !ok {
+		return PGDGInstall{}, false
+	}
+	repo := fmt.Sprintf("https://download.postgresql.org/pub/repos/yum/reporpms/EL-%d-%s/pgdg-redhat-repo-latest.noarch.rpm", el, machine)
+	return PGDGInstall{
+		Commands: [][]string{
+			{"dnf", "install", "-y", repo},
+			{"dnf", "install", "-y", fmt.Sprintf("postgresql%d", major)},
+		},
+		BinDir:     fmt.Sprintf("/usr/pgsql-%d/bin", major),
+		RemoveRepo: "rpm -e pgdg-redhat-repo",
+	}, true
+}
+
 func DetectTimezone() string {
 	return detectTimezone("/etc/timezone", "/etc/localtime", os.Getenv("TZ"))
 }

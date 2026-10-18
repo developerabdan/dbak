@@ -12,6 +12,7 @@ import (
 	"github.com/developerabdan/dbak/internal/app"
 	"github.com/developerabdan/dbak/internal/backup"
 	"github.com/developerabdan/dbak/internal/config"
+	"github.com/developerabdan/dbak/internal/engine"
 	"github.com/developerabdan/dbak/internal/sftp"
 	"github.com/developerabdan/dbak/internal/system"
 )
@@ -159,6 +160,10 @@ func (s *session) batchSource(ctx context.Context) error {
 	}
 	ui.Success(fmt.Sprintf("Connected to %s %s.", flavorName(info.Flavor), info.Version))
 	if err := s.checkClient(ctx, eng, info); err != nil {
+		var tooOld *engine.ClientTooOldError
+		if errors.As(err, &tooOld) {
+			err = s.reportOldClient(tooOld, system.PGDGInstructions(s.env.OSFamily, tooOld.Server))
+		}
 		return app.Exit(app.ExitGeneral, err)
 	}
 	s.eng, s.server = eng, info
